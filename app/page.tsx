@@ -1,12 +1,18 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
+import { resolveSortieImage, SPORT_IMAGE_FALLBACK } from "@/lib/getAutoImage";
+import { parseRoute } from "@/lib/mapbox/parseRoute";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
+const MiniMapPreview = dynamic(() => import("@/components/MiniMapPreview"), { ssr: false });
+const WeatherWidget = dynamic(() => import("@/components/WeatherWidget"), { ssr: false });
 
 type Sortie = {
   id: string;
@@ -19,11 +25,13 @@ type Sortie = {
   nbParticipants: number;
   participantsMax: number;
   image: string | null;
+  image_url?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   participantIds?: string[];
   organizerId?: string | null;
   status?: string;
+  route?: string | null;
 };
 
 type Bounds = { minLng: number; maxLng: number; minLat: number; maxLat: number } | null;
@@ -37,15 +45,8 @@ const SPORT_EMOJI: Record<string, string> = {
   "Triathlon": "🏅",
 };
 
-const SPORT_IMAGE: Record<string, string> = {
-  "Course à pied": "https://images.unsplash.com/photo-1571008887538-b36bb32f4571?w=800&q=80",
-  "Vélo":          "https://images.unsplash.com/photo-1541625602330-2277a4c46182?w=800&q=80",
-  "Randonnée":     "https://images.unsplash.com/photo-1551632811-561732d1e306?w=800&q=80",
-  "Trail":         "https://images.unsplash.com/photo-1483728642387-6c3bdd6c93e5?w=800&q=80",
-  "Natation":      "https://images.unsplash.com/photo-1530549387789-4c1017266635?w=800&q=80",
-  "Triathlon":     "https://images.unsplash.com/photo-1560073743-0107c7b2e5b4?w=800&q=80",
-  "default":       "https://images.unsplash.com/photo-1517649763962-0c623066013b?w=800&q=80",
-};
+// Static fallbacks re-exported from lib for hero image use
+const SPORT_IMAGE = SPORT_IMAGE_FALLBACK;
 
 const SPORT_COLOR: Record<string, string> = {
   "Course à pied": "#ef4444",
@@ -133,6 +134,7 @@ export default function Home() {
   const [joinToast, setJoinToast] = useState("");
   const [activityToast, setActivityToast] = useState("");
   const [activityVisible, setActivityVisible] = useState(false);
+  const [showMapFor, setShowMapFor] = useState<Set<string>>(new Set());
   const { user } = useUser();
   const router = useRouter();
 
@@ -290,6 +292,18 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── Widget météo ── */}
+      <section className="bg-gradient-to-b from-slate-50/80 to-white border-b border-slate-100">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-6">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Météo locale</span>
+            <div className="flex-1 h-px bg-slate-100" />
+            <span className="text-xs text-slate-300">OpenWeatherMap</span>
+          </div>
+          <WeatherWidget />
+        </div>
+      </section>
+
       {/* ── Filtres sticky ── */}
       <div className="sticky top-16 z-20 bg-white/90 backdrop-blur-md border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap gap-2 items-center">
@@ -417,24 +431,57 @@ export default function Home() {
               const isAlmostFull = pct >= 80 && !isFull && !isClosed;
               const isNew = s.id === filtered[filtered.length - 1]?.id;
 
+              const parsedRouteData = parseRoute(s.route);
+              const parsedRoute = parsedRouteData?.geometry ?? null;
+              const hasRoute = parsedRoute && parsedRoute.length >= 2;
+              const mapShown = showMapFor.has(s.id);
+              const toggleMap = (e: React.MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowMapFor((prev) => {
+                  const next = new Set(prev);
+                  next.has(s.id) ? next.delete(s.id) : next.add(s.id);
+                  return next;
+                });
+              };
+
               return (
                 <div
                   key={s.id}
                   className="group bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-2xl hover:-translate-y-1.5 hover:scale-[1.02] transition-all duration-200 ease-in-out cursor-default"
                 >
-                  {/* ── Zone image ── */}
+                  {/* ── Zone image / mini-map ── */}
                   <div className="relative h-36 sm:h-48 bg-slate-900 overflow-hidden">
+
+                    {/* Photo (always rendered, hidden behind map when map is shown) */}
                     <img
-                      src={s.image ?? (SPORT_IMAGE[s.sport] ?? SPORT_IMAGE["default"])}
+                      src={resolveSortieImage(s.image_url ?? s.image, s.sport, s.lieu)}
                       alt={s.titre}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-in-out opacity-90 group-hover:opacity-100"
+                      className={`absolute inset-0 w-full h-full object-cover transition-all duration-500 ease-in-out ${
+                        mapShown ? "opacity-0 scale-105" : "group-hover:scale-105 opacity-90 group-hover:opacity-100"
+                      }`}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src =
+                          SPORT_IMAGE_FALLBACK[s.sport] ?? SPORT_IMAGE_FALLBACK["default"];
+                      }}
                     />
 
-                    {/* Gradient overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                    {/* Mini-map (lazy mounted, fades in) */}
+                    {hasRoute && mapShown && (
+                      <div className="absolute inset-0 fade-in">
+                        <MiniMapPreview
+                          route={parsedRoute!}
+                          slopes={parsedRouteData?.slopes}
+                          height="100%"
+                        />
+                      </div>
+                    )}
 
-                    {/* Titre sur l'image */}
-                    <div className="absolute bottom-0 left-0 right-0 px-4 pb-3">
+                    {/* Gradient overlay — hidden when map is open */}
+                    <div className={`absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent transition-opacity duration-300 ${mapShown ? "opacity-0" : "opacity-100"}`} />
+
+                    {/* Titre sur l'image — masqué quand la mini-map est ouverte */}
+                    <div className={`absolute bottom-0 left-0 right-0 px-4 pb-3 transition-opacity duration-300 ${mapShown ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
                       <h2 className="text-white font-bold text-lg leading-snug drop-shadow line-clamp-2">
                         {s.titre}
                       </h2>
@@ -479,10 +526,25 @@ export default function Home() {
                       )}
                     </div>
 
-                    {/* Emoji sport haut-droit */}
-                    <span className="absolute top-3 right-3 text-xl drop-shadow">
-                      {SPORT_EMOJI[s.sport] ?? "🏅"}
-                    </span>
+                    {/* Haut-droit : bouton parcours si dispo, sinon emoji sport */}
+                    <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                      {hasRoute ? (
+                        <button
+                          type="button"
+                          onClick={toggleMap}
+                          title={mapShown ? "Voir la photo" : "Voir le parcours"}
+                          className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full shadow-md transition-all duration-200 active:scale-95 ${
+                            mapShown
+                              ? "bg-emerald-500 text-white hover:bg-emerald-400"
+                              : "bg-white/90 text-slate-700 hover:bg-white backdrop-blur-sm"
+                          }`}
+                        >
+                          {mapShown ? "📷 Photo" : "🗺️ Parcours"}
+                        </button>
+                      ) : (
+                        <span className="text-xl drop-shadow">{SPORT_EMOJI[s.sport] ?? "🏅"}</span>
+                      )}
+                    </div>
                   </div>
 
                   {/* ── Contenu ── */}

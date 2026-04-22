@@ -5,6 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useUser } from "@/context/UserContext";
+import { resolveSortieImage, SPORT_IMAGE_FALLBACK } from "@/lib/getAutoImage";
+import { parseRoute } from "@/lib/mapbox/parseRoute";
+import { getDifficulty } from "@/lib/elevation/elevationService";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
 
@@ -19,6 +22,7 @@ type Sortie = {
   nbParticipants: number;
   participantsMax: number;
   image: string | null;
+  image_url?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   participantIds?: string[];
@@ -209,22 +213,14 @@ export default function SortiePage() {
     ? [{ id: sortie.id, titre: sortie.titre, date: sortie.date, heure: sortie.heure, latitude: sortie.latitude, longitude: sortie.longitude, color: "#2563eb" }]
     : [];
 
-  let parsedRoute: [number, number][] | undefined;
-  try {
-    if (sortie.route) parsedRoute = JSON.parse(sortie.route);
-  } catch { /* route invalide */ }
-
-  function haversineKm(a: [number, number], b: [number, number]): number {
-    const R = 6371;
-    const dLat = (b[1] - a[1]) * Math.PI / 180;
-    const dLon = (b[0] - a[0]) * Math.PI / 180;
-    const sinLat = Math.sin(dLat / 2);
-    const sinLon = Math.sin(dLon / 2);
-    const aa = sinLat * sinLat + Math.cos(a[1] * Math.PI / 180) * Math.cos(b[1] * Math.PI / 180) * sinLon * sinLon;
-    return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
-  }
-  const routeDistance = parsedRoute && parsedRoute.length >= 2
-    ? parsedRoute.reduce((acc, pt, i) => i === 0 ? 0 : acc + haversineKm(parsedRoute![i - 1], pt), 0)
+  const parsedRouteData = parseRoute(sortie.route);
+  const parsedRoute = parsedRouteData?.geometry;
+  const routeDistance = parsedRouteData?.distanceKm ?? null;
+  const routeGain = parsedRouteData?.gain ?? null;
+  const routeLoss = parsedRouteData?.loss ?? null;
+  const routeSlopes = parsedRouteData?.slopes;
+  const difficulty = routeGain != null && routeDistance != null && routeGain > 0
+    ? getDifficulty(routeGain, routeDistance)
     : null;
 
   // ─── Rendu ───────────────────────────────────────────────────────────────────
@@ -243,13 +239,15 @@ export default function SortiePage() {
 
           {/* Image header avec overlay + titre */}
           <div className="relative h-64 bg-gradient-to-br from-slate-200 to-slate-300 overflow-hidden">
-            {sortie.image ? (
-              <img src={sortie.image} alt={sortie.titre} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-8xl select-none opacity-30">
-                {SPORT_EMOJI[sortie.sport] ?? "🏅"}
-              </div>
-            )}
+            <img
+              src={resolveSortieImage(sortie.image_url ?? sortie.image, sortie.sport, sortie.lieu)}
+              alt={sortie.titre}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src =
+                  SPORT_IMAGE_FALLBACK[sortie.sport] ?? SPORT_IMAGE_FALLBACK["default"];
+              }}
+            />
 
             {/* Gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
@@ -348,24 +346,67 @@ export default function SortiePage() {
               )}
             </div>
 
-            {/* Carte Mapbox */}
-            {(marker.length > 0 || parsedRoute) && (
-              <div className="rounded-2xl overflow-hidden shadow-sm ring-1 ring-slate-100">
-                <Map
-                  markers={marker}
-                  center={sortie.longitude && sortie.latitude ? [sortie.longitude, sortie.latitude] : undefined}
-                  zoom={13}
-                  height="280px"
-                  route={parsedRoute}
-                />
-                {routeDistance !== null && (
-                  <div className="px-4 py-2.5 bg-emerald-50 border-t border-emerald-100 flex items-center gap-2">
-                    <span className="text-emerald-600 text-sm font-semibold">🗺️ Distance parcours</span>
-                    <span className="text-emerald-800 font-bold">{routeDistance.toFixed(2)} km</span>
+            {/* ── Carte + stats parcours ── */}
+            <div className="rounded-2xl overflow-hidden shadow-sm ring-1 ring-slate-100">
+              <Map
+                markers={marker}
+                center={
+                  sortie.longitude && sortie.latitude
+                    ? [sortie.longitude, sortie.latitude]
+                    : parsedRoute && parsedRoute.length > 0
+                    ? parsedRoute[0]
+                    : [-0.5792, 44.8378]
+                }
+                zoom={sortie.latitude || parsedRoute ? 13 : 10}
+                height="300px"
+                route={parsedRoute}
+                slopes={routeSlopes}
+              />
+
+              {/* Stats dénivelé */}
+              {parsedRoute && parsedRoute.length >= 2 && (
+                <div className="px-4 py-3 bg-white border-t border-slate-100">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {routeDistance != null && (
+                      <StatBadge icon="📏" label="Distance" value={`${routeDistance.toFixed(2)} km`} />
+                    )}
+                    {routeGain != null && routeGain > 0 && (
+                      <StatBadge icon="⬆️" label="D+" value={`${routeGain} m`} color="text-emerald-700" />
+                    )}
+                    {routeLoss != null && routeLoss > 0 && (
+                      <StatBadge icon="⬇️" label="D−" value={`${routeLoss} m`} color="text-red-600" />
+                    )}
+                    {difficulty && (
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${difficulty.bg} ${difficulty.color}`}>
+                        {difficulty.label}
+                      </span>
+                    )}
+                    {/* Légende pentes */}
+                    {routeSlopes && routeSlopes.length > 0 && (
+                      <div className="ml-auto flex items-center gap-2.5 flex-wrap">
+                        {[
+                          { color: "#10b981", label: "0–3 %" },
+                          { color: "#eab308", label: "3–6 %" },
+                          { color: "#f97316", label: "6–10 %" },
+                          { color: "#ef4444", label: ">10 %" },
+                        ].map((item) => (
+                          <div key={item.label} className="flex items-center gap-1">
+                            <span className="w-3 h-1.5 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: item.color }} />
+                            <span className="text-[10px] text-slate-500 font-medium">{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+
+              {!sortie.latitude && !parsedRoute && (
+                <div className="px-4 py-2 bg-slate-50 border-t border-slate-100">
+                  <p className="text-xs text-slate-400 text-center">Aucune position ni tracé enregistré pour cette sortie</p>
+                </div>
+              )}
+            </div>
 
             {/* Bouton rejoindre */}
             {!isOrganizer && (
@@ -522,6 +563,22 @@ export default function SortiePage() {
 }
 
 // ─── Composants UI ────────────────────────────────────────────────────────────
+
+function StatBadge({
+  icon, label, value, color = "text-slate-700",
+}: {
+  icon: string; label: string; value: string; color?: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 bg-slate-50 rounded-xl px-3 py-1.5">
+      <span className="text-sm">{icon}</span>
+      <div className="flex flex-col leading-tight">
+        <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">{label}</span>
+        <span className={`text-sm font-bold ${color}`}>{value}</span>
+      </div>
+    </div>
+  );
+}
 
 function InfoCard({
   icon, label, value, valueClass = "text-slate-800",

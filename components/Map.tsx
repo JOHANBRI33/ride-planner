@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { buildSlopeGeoJSON, buildPlainGeoJSON, type SlopeSegment } from "@/lib/elevation/elevationService";
 
 type Marker = {
   id: string;
@@ -23,6 +24,7 @@ type Props = {
   height?: string;
   onBoundsChange?: (bounds: Bounds) => void;
   route?: [number, number][];
+  slopes?: SlopeSegment[]; // colored segments from StoredRoute
 };
 
 const DEFAULT_CENTER: [number, number] = [-0.5792, 44.8378];
@@ -34,6 +36,7 @@ export default function Map({
   height = "400px",
   onBoundsChange,
   route,
+  slopes,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -44,7 +47,7 @@ export default function Map({
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/mapbox/streets-v12",
+      style: "mapbox://styles/mapbox/outdoors-v12",
       center,
       zoom,
     });
@@ -64,19 +67,43 @@ export default function Map({
     }
 
     map.on("load", () => {
-      // Route tracé
       if (route && route.length >= 2) {
-        map.addSource("route", {
-          type: "geojson",
-          data: { type: "Feature", geometry: { type: "LineString", coordinates: route }, properties: {} },
+        // Use colored segments when available, plain green otherwise
+        const routeData = slopes && slopes.length > 0
+          ? buildSlopeGeoJSON(slopes)
+          : buildPlainGeoJSON(route);
+
+        map.addSource("route", { type: "geojson", data: routeData });
+
+        // Glow
+        map.addLayer({
+          id: "route-glow",
+          type: "line",
+          source: "route",
+          paint: { "line-color": "#10b981", "line-width": 10, "line-opacity": 0.15, "line-blur": 6 },
+          layout: { "line-join": "round", "line-cap": "round" },
         });
+
+        // Main line — data-driven color
         map.addLayer({
           id: "route-line",
           type: "line",
           source: "route",
-          paint: { "line-color": "#10b981", "line-width": 4, "line-opacity": 0.8 },
+          paint: {
+            "line-color": slopes && slopes.length > 0 ? ["get", "color"] : "#10b981",
+            "line-width": 4,
+            "line-opacity": 0.9,
+          },
           layout: { "line-join": "round", "line-cap": "round" },
         });
+
+        // Fit map to route
+        const lngs = route.map((p) => p[0]);
+        const lats = route.map((p) => p[1]);
+        map.fitBounds(
+          [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+          { padding: 50, maxZoom: 15, duration: 0 },
+        );
       }
 
       markers.forEach((m) => {
@@ -86,9 +113,7 @@ export default function Map({
             ${m.date ? `<div style="font-size:12px;color:#6b7280">📅 ${m.date}${m.heure ? ` à ${m.heure}` : ""}</div>` : ""}
           </div>
         `;
-        const popup = new mapboxgl.Popup({ offset: 14, closeButton: false })
-          .setHTML(popupHtml);
-
+        const popup = new mapboxgl.Popup({ offset: 14, closeButton: false }).setHTML(popupHtml);
         new mapboxgl.Marker({ color: m.color ?? "#2563eb" })
           .setLngLat([m.longitude, m.latitude])
           .setPopup(popup)
@@ -100,7 +125,7 @@ export default function Map({
     map.on("zoomend", emitBounds);
 
     return () => map.remove();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return <div ref={containerRef} style={{ height }} className="w-full" />;

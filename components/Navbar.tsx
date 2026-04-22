@@ -17,6 +17,9 @@ export default function Navbar() {
 
         {/* Right */}
         <div className="flex items-center gap-3">
+          <Link href="/request" className="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors duration-150 hidden sm:block">
+            Demandes
+          </Link>
           <Link href="/create">
             <button className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-sm font-semibold px-4 py-2 rounded-full transition-all duration-150 shadow-sm">
               + Créer

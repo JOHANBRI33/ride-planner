@@ -36,6 +36,7 @@ export async function POST(request: Request) {
     if (body.organizerEmail)    optionalFields["organizerEmail"] = body.organizerEmail;
     if (body.organizerId)       optionalFields["status"]         = "open";
     if (body.route)             optionalFields["route"]          = body.route;
+    if (body.image_url)         optionalFields["image_url"]      = body.image_url;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async function createRecord(fields: Record<string, any>) {
@@ -83,6 +84,7 @@ export async function GET() {
         latitude: f["Latitude"] ?? null,
         longitude: f["Longitude"] ?? null,
         image: (f["Carte"] as { url: string }[] | undefined)?.[0]?.url || null,
+        image_url: (f["image_url"] as string) ?? null,
         participantIds: f["Participants IDs"]
           ? (f["Participants IDs"] as string).split(",").map((s) => s.trim())
           : [],

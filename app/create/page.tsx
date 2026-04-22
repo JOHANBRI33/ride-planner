@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
+import type { StoredRoute } from "@/lib/elevation/elevationService";
 
 const RoutePickerMap = dynamic(() => import("@/components/RoutePickerMap"), { ssr: false });
 
@@ -21,6 +22,7 @@ export default function CreatePage() {
   const [error, setError] = useState("");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [routePoints, setRoutePoints] = useState<[number, number][]>([]);
+  const [storedRoute, setStoredRoute] = useState<StoredRoute | null>(null);
 
   function handleLocationChange(c: { lat: number; lng: number }, adresse?: string) {
     setCoords(c);
@@ -48,7 +50,7 @@ export default function CreatePage() {
       longitude: coords?.lng ?? null,
       organizerId: user.id,
       organizerEmail: user.email,
-      route: routePoints.length >= 2 ? JSON.stringify(routePoints) : null,
+      route: storedRoute ? JSON.stringify(storedRoute) : routePoints.length >= 2 ? JSON.stringify(routePoints) : null,
     };
 
     const res = await fetch("/api/sorties", {
@@ -63,6 +65,7 @@ export default function CreatePage() {
       form.reset();
       setCoords(null);
       setRoutePoints([]);
+      setStoredRoute(null);
       setSuccess(true);
     } else {
       setError("Erreur lors de la création. Réessaie.");
@@ -110,7 +113,7 @@ export default function CreatePage() {
           <Field label="Carte · RDV &amp; Parcours">
             <RoutePickerMap
               onLocationChange={handleLocationChange}
-              onRouteChange={setRoutePoints}
+              onRouteChange={(pts, sr) => { setRoutePoints(pts); setStoredRoute(sr ?? null); }}
               height="320px"
             />
             {coords && (
