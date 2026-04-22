@@ -11,7 +11,11 @@ type Demande = {
   sport: string;
   message: string;
   date: string;
+  heure?: string;
   zone: string;
+  distance?: string;
+  denivele?: string;
+  objectif?: string;
   type: "cherche" | "propose";
   createdBy: string;
   responses: number;
@@ -21,24 +25,28 @@ type Demande = {
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const SPORTS = ["Vélo", "Course à pied", "Trail", "Randonnée", "Natation", "Triathlon", "Autre"];
+const SPORTS = ["Vélo", "Course à pied", "Trail", "Randonnée", "Natation", "Triathlon", "Autre sport"];
 
 const SPORT_BADGE: Record<string, string> = {
-  "Vélo":          "bg-blue-100 text-blue-700",
-  "Course à pied": "bg-red-100 text-red-700",
-  "Trail":         "bg-emerald-100 text-emerald-700",
-  "Randonnée":     "bg-green-100 text-green-700",
-  "Natation":      "bg-cyan-100 text-cyan-700",
-  "Triathlon":     "bg-amber-100 text-amber-700",
-  "Autre":         "bg-slate-100 text-slate-600",
+  "Vélo":           "bg-blue-100 text-blue-700",
+  "Course à pied":  "bg-red-100 text-red-700",
+  "Trail":          "bg-emerald-100 text-emerald-700",
+  "Randonnée":      "bg-green-100 text-green-700",
+  "Natation":       "bg-cyan-100 text-cyan-700",
+  "Triathlon":      "bg-amber-100 text-amber-700",
+  "Autre sport":    "bg-slate-100 text-slate-600",
 };
 
 const SPORT_EMOJI: Record<string, string> = {
   "Vélo": "🚴", "Course à pied": "🏃", "Trail": "⛰️",
-  "Randonnée": "🥾", "Natation": "🏊", "Triathlon": "🏅", "Autre": "🏅",
+  "Randonnée": "🥾", "Natation": "🏊", "Triathlon": "🏅", "Autre sport": "🏅",
 };
 
-// Post-it background palette (pastel)
+const OBJECTIFS = [
+  "Sortie découverte", "Entraînement", "Compétition / prépa",
+  "Longue distance", "Récupération active", "Autre",
+];
+
 const POSTIT_COLORS = [
   "bg-yellow-50 border-yellow-200",
   "bg-blue-50 border-blue-200",
@@ -49,11 +57,9 @@ const POSTIT_COLORS = [
   "bg-cyan-50 border-cyan-200",
 ];
 
-// Deterministic rotation from id string (no hydration mismatch)
 function getRotation(id: string): string {
   const n = id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const rotations = ["-rotate-1", "rotate-1", "-rotate-[0.5deg]", "rotate-[0.5deg]", "rotate-0"];
-  return rotations[n % rotations.length];
+  return ["-rotate-1", "rotate-1", "-rotate-[0.5deg]", "rotate-[0.5deg]", "rotate-0"][n % 5];
 }
 
 function getColor(id: string): string {
@@ -67,9 +73,8 @@ function shortEmail(email: string): string {
 
 function formatDate(iso: string): string {
   if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
-  } catch { return iso; }
+  try { return new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }); }
+  catch { return iso; }
 }
 
 // ── Post-it card ───────────────────────────────────────────────────────────
@@ -85,23 +90,20 @@ function PostItCard({ d, onInterest }: { d: Demande; onInterest: (id: string) =>
     onInterest(d.id);
   }
 
-  const color = getColor(d.id);
-  const rotation = getRotation(d.id);
-  const typeLabel = d.type === "cherche" ? "cherche" : "propose";
   const typeStyle = d.type === "cherche"
     ? "bg-indigo-100 text-indigo-700"
     : "bg-emerald-100 text-emerald-700";
 
   return (
-    <div className={`relative flex flex-col gap-2 border rounded-2xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 ${color} ${rotation}`}>
+    <div className={`relative flex flex-col gap-2 border rounded-2xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 ${getColor(d.id)} ${getRotation(d.id)}`}>
 
-      {/* Pin décoratif */}
+      {/* Pin */}
       <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-slate-400/60 shadow-sm" />
 
-      {/* Header : type + sport */}
+      {/* Header */}
       <div className="flex items-center gap-2 flex-wrap pt-1">
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${typeStyle}`}>
-          {typeLabel === "cherche" ? "🔍 Cherche" : "📣 Propose"}
+          {d.type === "cherche" ? "🔍 Cherche" : "📣 Propose"}
         </span>
         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${SPORT_BADGE[d.sport] ?? "bg-slate-100 text-slate-600"}`}>
           {SPORT_EMOJI[d.sport] ?? "🏅"} {d.sport}
@@ -109,19 +111,24 @@ function PostItCard({ d, onInterest }: { d: Demande; onInterest: (id: string) =>
       </div>
 
       {/* Message */}
-      <p className="text-sm font-medium text-slate-800 leading-snug line-clamp-3 flex-1">
-        &ldquo;{d.message}&rdquo;
-      </p>
+      {d.message && (
+        <p className="text-sm font-medium text-slate-800 leading-snug line-clamp-3 flex-1">
+          &ldquo;{d.message}&rdquo;
+        </p>
+      )}
 
       {/* Meta */}
       <div className="flex flex-col gap-0.5 text-[11px] text-slate-500">
-        {d.zone && <span>📍 {d.zone}</span>}
-        {d.date && <span>📅 {d.date}</span>}
+        {d.zone    && <span>📍 {d.zone}</span>}
+        {d.date    && <span>📅 {d.date}{d.heure ? ` · ${d.heure}` : ""}</span>}
+        {d.distance && <span>📏 {d.distance}</span>}
+        {d.denivele && <span>⛰️ {d.denivele}</span>}
+        {d.objectif && <span>🎯 {d.objectif}</span>}
         <span>✍️ {shortEmail(d.createdBy)}</span>
         {d.createdAt && <span className="text-slate-400">{formatDate(d.createdAt)}</span>}
       </div>
 
-      {/* Footer : réponses + bouton */}
+      {/* Footer */}
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-current/10">
         <span className="text-[11px] text-slate-500 font-medium">
           {count > 0 ? `${count} intéressé${count > 1 ? "s" : ""}` : "Sois le premier !"}
@@ -147,25 +154,33 @@ function PostItCard({ d, onInterest }: { d: Demande; onInterest: (id: string) =>
 function CreateForm({ onCreated, onClose }: { onCreated: () => void; onClose: () => void }) {
   const { user } = useUser();
   const router = useRouter();
-  const [sport, setSport] = useState("");
-  const [message, setMessage] = useState("");
-  const [date, setDate] = useState("");
-  const [zone, setZone] = useState("");
-  const [type, setType] = useState<"cherche" | "propose">("cherche");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [type, setType]           = useState<"cherche" | "propose">("cherche");
+  const [sport, setSport]         = useState("");
+  const [message, setMessage]     = useState("");
+  const [date, setDate]           = useState("");
+  const [heure, setHeure]         = useState("");
+  const [zone, setZone]           = useState("");
+  const [distance, setDistance]   = useState("");
+  const [denivele, setDenivele]   = useState("");
+  const [objectif, setObjectif]   = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!user) { router.push("/login"); return; }
-    if (!sport || !message.trim()) { setError("Sport et message requis."); return; }
+    if (!sport) { setError("Choisis un sport."); return; }
+    if (!zone.trim()) { setError("La zone est requise."); return; }
     setLoading(true);
     setError("");
 
     const res = await fetch("/api/demandes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sport, message: message.trim(), date, zone, type, createdBy: user.email }),
+      body: JSON.stringify({
+        sport, message: message.trim(), date, heure, zone: zone.trim(),
+        distance, denivele, objectif, type, createdBy: user.email,
+      }),
     });
 
     setLoading(false);
@@ -173,14 +188,22 @@ function CreateForm({ onCreated, onClose }: { onCreated: () => void; onClose: ()
     else setError("Erreur lors de la publication.");
   }
 
+  const msgPlaceholder = type === "cherche"
+    ? "Ex : Je cherche quelqu'un pour un trail dimanche matin, niveau intermédiaire…"
+    : "Ex : Je propose une sortie vélo de 80 km, allure modérée, départ Bordeaux centre…";
+
   return (
     <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 shadow-md flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h3 className="font-bold text-slate-800 text-sm">📝 Nouvelle annonce</h3>
+        <div>
+          <h3 className="font-bold text-slate-800 text-sm">🎯 Mon intention sportive</h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">Remplis ce qui est pertinent pour ta sortie</p>
+        </div>
         <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+
         {/* Type */}
         <div className="flex gap-2">
           {(["cherche", "propose"] as const).map((t) => (
@@ -188,13 +211,13 @@ function CreateForm({ onCreated, onClose }: { onCreated: () => void; onClose: ()
               key={t}
               type="button"
               onClick={() => setType(t)}
-              className={`flex-1 text-xs font-bold py-2 rounded-xl border transition-all ${
+              className={`flex-1 text-xs font-bold py-2.5 rounded-xl border transition-all ${
                 type === t
                   ? t === "cherche" ? "bg-indigo-600 text-white border-indigo-600" : "bg-emerald-600 text-white border-emerald-600"
                   : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
               }`}
             >
-              {t === "cherche" ? "🔍 Je cherche" : "📣 Je propose"}
+              {t === "cherche" ? "🔍 Je cherche une sortie" : "📣 Je propose une sortie"}
             </button>
           ))}
         </div>
@@ -204,41 +227,74 @@ function CreateForm({ onCreated, onClose }: { onCreated: () => void; onClose: ()
           value={sport}
           onChange={(e) => setSport(e.target.value)}
           required
-          className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className={inputCls}
         >
-          <option value="">— Sport —</option>
-          {SPORTS.map((s) => <option key={s} value={s}>{s}</option>)}
+          <option value="">— Quel sport ? —</option>
+          {SPORTS.map((s) => <option key={s} value={s}>{SPORT_EMOJI[s] ?? "🏅"} {s}</option>)}
         </select>
-
-        {/* Message */}
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder={type === "cherche"
-            ? "Ex : Je cherche quelqu'un pour un trail dimanche matin autour de Bordeaux…"
-            : "Ex : Je propose une sortie vélo de 80km, niveau intermédiaire…"}
-          maxLength={200}
-          rows={3}
-          required
-          className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-        />
-        <span className="text-[10px] text-slate-400 -mt-2">{message.length}/200</span>
 
         {/* Zone + Date */}
         <div className="grid grid-cols-2 gap-2">
           <input
             value={zone}
             onChange={(e) => setZone(e.target.value)}
-            placeholder="Zone (ex: Bordeaux)"
-            maxLength={50}
-            className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Zone (ex : Bordeaux)"
+            maxLength={60}
+            required
+            className={inputCls}
           />
           <input
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={inputCls}
           />
+        </div>
+
+        {/* Heure + Distance */}
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            type="time"
+            value={heure}
+            onChange={(e) => setHeure(e.target.value)}
+            className={inputCls}
+            placeholder="Heure de départ"
+          />
+          <input
+            value={distance}
+            onChange={(e) => setDistance(e.target.value)}
+            placeholder="Distance (ex : 50 km)"
+            maxLength={20}
+            className={inputCls}
+          />
+        </div>
+
+        {/* Dénivelé + Objectif */}
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            value={denivele}
+            onChange={(e) => setDenivele(e.target.value)}
+            placeholder="Dénivelé (ex : +800 m)"
+            maxLength={20}
+            className={inputCls}
+          />
+          <select value={objectif} onChange={(e) => setObjectif(e.target.value)} className={inputCls}>
+            <option value="">— Objectif —</option>
+            {OBJECTIFS.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+
+        {/* Message libre */}
+        <div>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder={msgPlaceholder}
+            maxLength={240}
+            rows={3}
+            className={`${inputCls} resize-none`}
+          />
+          <span className="text-[10px] text-slate-400 block text-right -mt-1">{message.length}/240</span>
         </div>
 
         {error && <p className="text-xs text-red-500">{error}</p>}
@@ -248,20 +304,22 @@ function CreateForm({ onCreated, onClose }: { onCreated: () => void; onClose: ()
           disabled={loading}
           className="bg-slate-900 hover:bg-slate-700 text-white font-bold text-sm py-2.5 rounded-xl transition-all active:scale-[0.98] disabled:opacity-50"
         >
-          {loading ? "Publication…" : "📌 Publier l'annonce"}
+          {loading ? "Publication…" : "📌 Publier mon intention"}
         </button>
       </form>
     </div>
   );
 }
 
+const inputCls = "w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500";
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function CommunauteBoard() {
-  const [demandes, setDemandes] = useState<Demande[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [showAll, setShowAll] = useState(false);
+  const [demandes, setDemandes]   = useState<Demande[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [showForm, setShowForm]   = useState(false);
+  const [showAll, setShowAll]     = useState(false);
   const { user } = useUser();
   const router = useRouter();
 
@@ -290,26 +348,28 @@ export default function CommunauteBoard() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
 
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-7">
           <div>
             <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-              💬 La communauté s&apos;organise
+              🤝 Trouver ou organiser une sortie
             </h2>
             <p className="text-sm text-slate-400 mt-1">
-              Cherche un partenaire ou propose une idée de sortie
+              Trouve des partenaires ou propose une sortie sportive
             </p>
           </div>
-          <button
-            onClick={handleCreate}
-            className="flex items-center gap-2 text-sm font-semibold bg-slate-900 hover:bg-slate-700 text-white px-4 py-2 rounded-xl shadow-sm transition-all active:scale-[0.97]"
-          >
-            📌 Publier une annonce
-          </button>
+          {!showForm && (
+            <button
+              onClick={handleCreate}
+              className="flex items-center gap-2 text-sm font-semibold bg-slate-900 hover:bg-slate-700 text-white px-5 py-2.5 rounded-xl shadow-sm transition-all active:scale-[0.97] flex-shrink-0"
+            >
+              🎯 Publier mon intention
+            </button>
+          )}
         </div>
 
         {/* Create form */}
         {showForm && (
-          <div className="mb-6 max-w-md">
+          <div className="mb-7 max-w-xl">
             <CreateForm onCreated={loadDemandes} onClose={() => setShowForm(false)} />
           </div>
         )}
@@ -331,14 +391,14 @@ export default function CommunauteBoard() {
         {/* Empty */}
         {!loading && demandes.length === 0 && !showForm && (
           <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-2xl">
-            <p className="text-4xl mb-3">📋</p>
-            <p className="font-semibold text-slate-600">Aucune annonce pour l&apos;instant</p>
-            <p className="text-sm text-slate-400 mt-1">Sois le premier à chercher un partenaire !</p>
+            <p className="text-4xl mb-3">🎯</p>
+            <p className="font-semibold text-slate-600">Aucune intention publiée pour l&apos;instant</p>
+            <p className="text-sm text-slate-400 mt-1">Sois le premier à chercher ou proposer une sortie !</p>
             <button
               onClick={handleCreate}
               className="mt-4 text-sm font-semibold bg-slate-900 hover:bg-slate-700 text-white px-5 py-2 rounded-xl shadow-sm transition-all"
             >
-              Publier une annonce →
+              Publier mon intention →
             </button>
           </div>
         )}
