@@ -95,35 +95,41 @@ function buildPopupHTML(s: MapSortie): string {
   `;
 }
 
-// ── Marker element factory ─────────────────────────────────────────────────
+// ── Marker pill factory (Airbnb style) ────────────────────────────────────
 
-function createMarkerEl(sport: string, hovered = false): HTMLDivElement {
+function createMarkerEl(s: MapSortie, hovered = false): HTMLDivElement {
   const el = document.createElement("div");
-  const color = sportColor(sport);
-  const emoji = SPORT_EMOJI[sport] ?? "🏅";
-  applyMarkerStyle(el, color, emoji, hovered);
+  applyMarkerStyle(el, s, hovered);
   return el;
 }
 
-function applyMarkerStyle(el: HTMLDivElement, color: string, emoji: string, hovered: boolean) {
+function applyMarkerStyle(el: HTMLDivElement, s: MapSortie, hovered: boolean) {
+  const color = sportColor(s.sport);
+  const emoji = SPORT_EMOJI[s.sport] ?? "🏅";
+  // Show distance if available, else sport short name
+  const label = s.sport.split(" ")[0]; // "Vélo", "Trail", "Course"…
+
+  el.innerHTML = `<span style="font-size:13px;line-height:1">${emoji}</span><span style="font-size:11px;font-weight:700;letter-spacing:-.01em">${label}</span>`;
   el.style.cssText = `
-    width: ${hovered ? "36px" : "28px"};
-    height: ${hovered ? "36px" : "28px"};
-    border-radius: 50%;
-    background: ${color};
-    border: ${hovered ? "3px" : "2.5px"} solid white;
-    box-shadow: ${hovered ? "0 4px 16px rgba(0,0,0,.35)" : "0 2px 8px rgba(0,0,0,.25)"};
-    cursor: pointer;
-    transition: width .15s, height .15s, box-shadow .15s;
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    font-size: ${hovered ? "15px" : "12px"};
+    gap: 4px;
+    padding: ${hovered ? "5px 10px" : "4px 8px"};
+    background: ${hovered ? color : "#fff"};
+    color: ${hovered ? "#fff" : "#1e293b"};
+    border: 2px solid ${color};
+    border-radius: 999px;
+    box-shadow: ${hovered ? `0 6px 20px ${color}55` : "0 2px 8px rgba(0,0,0,.18)"};
+    cursor: pointer;
+    white-space: nowrap;
+    transform: scale(${hovered ? "1.15" : "1"});
+    transform-origin: center bottom;
+    transition: transform .15s ease, box-shadow .15s ease, background .15s ease, color .15s ease;
     user-select: none;
-    position: relative;
     z-index: ${hovered ? "10" : "1"};
+    position: relative;
+    font-family: system-ui, sans-serif;
   `;
-  el.textContent = emoji;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -131,7 +137,7 @@ function applyMarkerStyle(el: HTMLDivElement, color: string, emoji: string, hove
 export default function ExploreMap({ sorties, hoveredId, onHover, height = "100%" }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef       = useRef<mapboxgl.Map | null>(null);
-  const markersRef   = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLDivElement; sport: string }>>(new Map());
+  const markersRef   = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLDivElement; sortie: MapSortie }>>(new Map());
   const popupRef     = useRef<mapboxgl.Popup | null>(null);
   const router       = useRouter();
 
@@ -186,16 +192,16 @@ export default function ExploreMap({ sorties, hoveredId, onHover, height = "100%
       valid.forEach((s) => {
         bounds.extend([s.longitude!, s.latitude!]);
 
-        const el = createMarkerEl(s.sport, false);
+        const el = createMarkerEl(s, false);
 
-        const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
+        const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
           .setLngLat([s.longitude!, s.latitude!])
           .addTo(map!);
 
         // Hover: show popup + highlight
         el.addEventListener("mouseenter", () => {
           onHover(s.id);
-          applyMarkerStyle(el, sportColor(s.sport), SPORT_EMOJI[s.sport] ?? "🏅", true);
+          applyMarkerStyle(el, s, true);
           popupRef.current
             ?.setLngLat([s.longitude!, s.latitude!])
             .setHTML(buildPopupHTML(s))
@@ -204,7 +210,7 @@ export default function ExploreMap({ sorties, hoveredId, onHover, height = "100%
 
         el.addEventListener("mouseleave", () => {
           if (hoveredId !== s.id) {
-            applyMarkerStyle(el, sportColor(s.sport), SPORT_EMOJI[s.sport] ?? "🏅", false);
+            applyMarkerStyle(el, s, false);
           }
           onHover(null);
           popupRef.current?.remove();
@@ -212,7 +218,7 @@ export default function ExploreMap({ sorties, hoveredId, onHover, height = "100%
 
         el.addEventListener("click", () => router.push(`/sorties/${s.id}`));
 
-        markersRef.current.set(s.id, { marker, el, sport: s.sport });
+        markersRef.current.set(s.id, { marker, el, sortie: s });
       });
 
       map!.fitBounds(bounds, { padding: 60, maxZoom: 13, duration: 800 });
@@ -228,8 +234,8 @@ export default function ExploreMap({ sorties, hoveredId, onHover, height = "100%
 
   // ── Sync hover from list ───────────────────────────────────────────────
   useEffect(() => {
-    markersRef.current.forEach(({ el, sport }, id) => {
-      applyMarkerStyle(el, sportColor(sport), SPORT_EMOJI[sport] ?? "🏅", id === hoveredId);
+    markersRef.current.forEach(({ el, sortie }, id) => {
+      applyMarkerStyle(el, sortie, id === hoveredId);
     });
 
     if (hoveredId) {

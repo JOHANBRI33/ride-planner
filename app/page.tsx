@@ -145,6 +145,7 @@ export default function Home() {
   const [activityVisible, setActivityVisible] = useState(false);
   const [showMapFor, setShowMapFor] = useState<Set<string>>(new Set());
   const [hoveredSortie, setHoveredSortie] = useState<string | null>(null);
+  const [mobileView, setMobileView] = useState<"list" | "map">("list");
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLng, setUserLng] = useState<number | null>(null);
   const [filterRadius, setFilterRadius] = useState<number | null>(null);
@@ -421,11 +422,27 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ── Toggle mobile Liste / Carte ── */}
+      <div className="lg:hidden sticky top-16 z-20 bg-white border-b border-slate-100 px-4 py-2 flex gap-2">
+        <button
+          onClick={() => setMobileView("list")}
+          className={`flex-1 text-sm font-semibold py-2 rounded-xl transition-all ${mobileView === "list" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+        >
+          ☰ Liste ({filtered.length})
+        </button>
+        <button
+          onClick={() => setMobileView("map")}
+          className={`flex-1 text-sm font-semibold py-2 rounded-xl transition-all ${mobileView === "map" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+        >
+          🗺️ Carte
+        </button>
+      </div>
+
       {/* ── Split layout : liste + carte ── */}
       <div id="sorties-grid" className="flex flex-col lg:flex-row lg:items-start">
 
         {/* ── LEFT : liste (natural page scroll) ── */}
-        <div className="w-full lg:w-[480px] xl:w-[540px] flex-shrink-0 lg:border-r border-slate-100 bg-white">
+        <div className={`w-full lg:flex-1 lg:border-r border-slate-100 bg-white ${mobileView === "map" ? "hidden lg:block" : ""}`}>
           <div className="px-4 sm:px-5 py-4">
 
             {/* Skeletons */}
@@ -588,8 +605,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ── RIGHT : carte sticky ── */}
-        <div className="hidden lg:block flex-1 sticky top-16 h-[60vh] min-w-[360px] max-w-[520px]">
+        {/* ── RIGHT : carte sticky (desktop 35%) ── */}
+        <div className="hidden lg:block lg:w-[35%] sticky top-16 h-[60vh]">
           <ExploreMap
             sorties={filtered}
             hoveredId={hoveredSortie}
@@ -598,15 +615,17 @@ export default function Home() {
           />
         </div>
 
-        {/* ── Mobile : carte compacte en haut de liste ── */}
-        <div className="lg:hidden h-[300px] order-first rounded-xl overflow-hidden mx-4 mt-4">
-          <ExploreMap
-            sorties={filtered}
-            hoveredId={hoveredSortie}
-            onHover={setHoveredSortie}
-            height="280px"
-          />
-        </div>
+        {/* ── Mobile : carte plein écran quand toggle actif ── */}
+        {mobileView === "map" && (
+          <div className="lg:hidden h-[calc(100vh-128px)]">
+            <ExploreMap
+              sorties={filtered}
+              hoveredId={hoveredSortie}
+              onHover={setHoveredSortie}
+              height="100%"
+            />
+          </div>
+        )}
 
       </div>
 
