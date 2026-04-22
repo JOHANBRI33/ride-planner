@@ -10,7 +10,7 @@ import { useUser } from "@/context/UserContext";
 import { resolveSortieImage, SPORT_IMAGE_FALLBACK } from "@/lib/getAutoImage";
 import { parseRoute } from "@/lib/mapbox/parseRoute";
 
-const Map = _dynamic(() => import("@/components/Map"), { ssr: false });
+const ExploreMap = _dynamic(() => import("@/components/ExploreMap"), { ssr: false });
 const MiniMapPreview = _dynamic(() => import("@/components/MiniMapPreview"), { ssr: false });
 const WeatherWidget = _dynamic(() => import("@/components/WeatherWidget"), { ssr: false });
 const CommunityActivity = _dynamic(() => import("@/components/CommunityActivity"), { ssr: false });
@@ -103,21 +103,29 @@ const SLOGANS = [
   "On sort ou quoi ?",
 ];
 
-function SkeletonCard() {
+function SkeletonCard({ horizontal }: { horizontal?: boolean }) {
+  if (horizontal) {
+    return (
+      <div className="flex gap-3 bg-white rounded-2xl border border-slate-100 p-3">
+        <div className="w-24 h-24 shimmer rounded-xl flex-shrink-0" />
+        <div className="flex-1 flex flex-col gap-2 py-1">
+          <div className="h-3 shimmer rounded-full w-2/3" />
+          <div className="h-3 shimmer rounded-full w-1/2" />
+          <div className="h-3 shimmer rounded-full w-1/3" />
+          <div className="flex gap-2 mt-auto">
+            <div className="h-7 shimmer rounded-xl flex-1" />
+            <div className="h-7 shimmer rounded-xl w-16" />
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
       <div className="h-48 shimmer" />
       <div className="p-4 flex flex-col gap-3">
         <div className="h-4 shimmer rounded-full w-3/4" />
         <div className="h-3 shimmer rounded-full w-1/2" />
-        <div className="flex gap-2 mt-1">
-          <div className="h-6 shimmer rounded-full w-20" />
-          <div className="h-6 shimmer rounded-full w-16" />
-        </div>
-        <div className="flex gap-2 mt-1">
-          <div className="h-9 shimmer rounded-xl flex-1" />
-          <div className="h-9 shimmer rounded-xl w-16" />
-        </div>
       </div>
     </div>
   );
@@ -126,7 +134,7 @@ function SkeletonCard() {
 export default function Home() {
   const [sorties, setSorties] = useState<Sortie[]>([]);
   const [loading, setLoading] = useState(true);
-  const [bounds, setBounds] = useState<Bounds>(null);
+  const [bounds, setBounds] = useState<Bounds>(null); // kept for filter compat
   const [filterSport, setFilterSport] = useState("");
   const [filterNiveau, setFilterNiveau] = useState("");
   const [filterDate, setFilterDate] = useState("");
@@ -136,6 +144,7 @@ export default function Home() {
   const [activityToast, setActivityToast] = useState("");
   const [activityVisible, setActivityVisible] = useState(false);
   const [showMapFor, setShowMapFor] = useState<Set<string>>(new Set());
+  const [hoveredSortie, setHoveredSortie] = useState<string | null>(null);
   const { user } = useUser();
   const router = useRouter();
 
@@ -374,56 +383,43 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+      {/* ── Split layout : liste + carte ── */}
+      <div id="sorties-grid" className="flex flex-col lg:flex-row lg:h-[calc(100vh-64px)]">
 
-        {/* Carte Mapbox */}
-        <div className="mb-8 rounded-2xl overflow-hidden shadow-sm ring-1 ring-slate-200">
-          <div className="hidden sm:block">
-            <Map markers={markers} height="380px" onBoundsChange={setBounds} />
-          </div>
-          <div className="sm:hidden">
-            <Map markers={markers} height="220px" onBoundsChange={setBounds} />
-          </div>
-        </div>
+        {/* ── LEFT : liste scrollable ── */}
+        <div className="w-full lg:w-[460px] xl:w-[520px] flex-shrink-0 overflow-y-auto lg:border-r border-slate-100 bg-white">
+          <div className="px-4 sm:px-5 py-4">
 
-        {/* Skeletons */}
-        {loading && (
-          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
-            {[1, 2, 3, 4, 5, 6].map((i) => <SkeletonCard key={i} />)}
-          </div>
-        )}
+            {/* Skeletons */}
+            {loading && (
+              <div className="flex flex-col gap-4">
+                {[1, 2, 3, 4].map((i) => <SkeletonCard key={i} horizontal />)}
+              </div>
+            )}
 
-        {/* Empty state */}
-        {!loading && filtered.length === 0 && (
-          <div className="text-center py-24 flex flex-col items-center gap-5">
-            <div className="w-24 h-24 bg-gradient-to-br from-slate-100 to-slate-200 rounded-3xl flex items-center justify-center text-5xl shadow-sm">
-              😴
-            </div>
-            <div>
-              <p className="text-slate-800 font-bold text-2xl">
-                {hasFilters || bounds ? "Aucune sortie trouvée" : "Aucune sortie pour l'instant"}
-              </p>
-              <p className="text-slate-400 text-base mt-2 max-w-xs mx-auto">
+            {/* Empty state */}
+            {!loading && filtered.length === 0 && (
+              <div className="text-center py-16 flex flex-col items-center gap-4">
+                <div className="text-5xl">😴</div>
+                <div>
+                  <p className="text-slate-800 font-bold text-lg">
+                    {hasFilters || bounds ? "Aucune sortie trouvée" : "Aucune sortie pour l'instant"}
+                  </p>
+                  <p className="text-slate-400 text-sm mt-1 max-w-xs mx-auto">
+                    {hasFilters || bounds ? "Élargis tes filtres." : "Crée la première sortie !"}
+                  </p>
+                </div>
                 {hasFilters || bounds
-                  ? "Essaie d'élargir tes filtres ou de zoomer sur la carte."
-                  : "Crée la première sortie et rassemble ton crew !"}
-              </p>
-            </div>
-            {hasFilters || bounds
-              ? <button onClick={resetFilters} className={btnGhost}>Effacer les filtres</button>
-              : (
-                <Link href="/create">
-                  <button className={btnPrimary}>🚀 Créer la première sortie</button>
-                </Link>
-              )
-            }
-          </div>
-        )}
+                  ? <button onClick={resetFilters} className={btnGhost}>Effacer les filtres</button>
+                  : <Link href="/create"><button className={btnPrimary}>🚀 Créer</button></Link>
+                }
+              </div>
+            )}
 
-        {/* ── Grille de cartes ── */}
-        {!loading && filtered.length > 0 && (
-          <div id="sorties-grid" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
-            {filtered.map((s, idx) => {
+            {/* ── Cartes horizontales ── */}
+            {!loading && filtered.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {filtered.map((s, idx) => {
               const isFull = (s.nbParticipants ?? 0) >= s.participantsMax;
               const isClosed = s.status === "closed";
               const isOrganizer = user?.id === s.organizerId;
@@ -450,192 +446,132 @@ export default function Home() {
               };
 
               return (
-                <div
-                  key={s.id}
-                  className="group bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-2xl hover:-translate-y-1.5 hover:scale-[1.02] transition-all duration-200 ease-in-out cursor-default"
-                >
-                  {/* ── Zone image / mini-map ── */}
-                  <div className="relative h-36 sm:h-48 bg-slate-900 overflow-hidden">
-
-                    {/* Photo (always rendered, hidden behind map when map is shown) */}
-                    <img
-                      src={resolveSortieImage(s.image_url ?? s.image, s.sport, s.lieu)}
-                      alt={s.titre}
-                      className={`absolute inset-0 w-full h-full object-cover transition-all duration-500 ease-in-out ${
-                        mapShown ? "opacity-0 scale-105" : "group-hover:scale-105 opacity-90 group-hover:opacity-100"
-                      }`}
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).src =
-                          SPORT_IMAGE_FALLBACK[s.sport] ?? SPORT_IMAGE_FALLBACK["default"];
-                      }}
-                    />
-
-                    {/* Mini-map (lazy mounted, fades in) */}
-                    {hasRoute && mapShown && (
-                      <div className="absolute inset-0 fade-in">
-                        <MiniMapPreview
-                          route={parsedRoute!}
-                          slopes={parsedRouteData?.slopes}
-                          height="100%"
+                <Link key={s.id} href={`/sorties/${s.id}`}>
+                  <div
+                    onMouseEnter={() => setHoveredSortie(s.id)}
+                    onMouseLeave={() => setHoveredSortie(null)}
+                    className={`group flex gap-3 bg-white rounded-2xl border transition-all duration-150 cursor-pointer p-3 ${
+                      hoveredSortie === s.id
+                        ? "border-blue-400 shadow-md ring-1 ring-blue-200"
+                        : "border-slate-100 hover:border-slate-200 hover:shadow-sm"
+                    }`}
+                  >
+                    {/* Image */}
+                    <div className="relative w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0 rounded-xl overflow-hidden bg-slate-200">
+                      {hasRoute && mapShown ? (
+                        <div className="absolute inset-0">
+                          <MiniMapPreview route={parsedRoute!} slopes={parsedRouteData?.slopes} height="100%" />
+                        </div>
+                      ) : (
+                        <img
+                          src={resolveSortieImage(s.image_url ?? s.image, s.sport, s.lieu)}
+                          alt={s.titre}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src =
+                              SPORT_IMAGE_FALLBACK[s.sport] ?? SPORT_IMAGE_FALLBACK["default"];
+                          }}
                         />
-                      </div>
-                    )}
-
-                    {/* Gradient overlay — hidden when map is open */}
-                    <div className={`absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent transition-opacity duration-300 ${mapShown ? "opacity-0" : "opacity-100"}`} />
-
-                    {/* Titre sur l'image — masqué quand la mini-map est ouverte */}
-                    <div className={`absolute bottom-0 left-0 right-0 px-4 pb-3 transition-opacity duration-300 ${mapShown ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
-                      <h2 className="text-white font-bold text-lg leading-snug drop-shadow line-clamp-2">
-                        {s.titre}
-                      </h2>
-                    </div>
-
-                    {/* Badges statut haut-gauche */}
-                    <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
-                      {isRecommended && (
-                        <span className="fade-in bg-amber-400 text-amber-900 text-xs font-bold px-2.5 py-0.5 rounded-full shadow-sm">
-                          ⭐ Recommandé
-                        </span>
                       )}
-                      {isNew && !isOrganizer && (
-                        <span className="fade-in bg-blue-500 text-white text-xs font-bold px-2.5 py-0.5 rounded-full shadow-sm">
-                          🆕 Nouveau
-                        </span>
-                      )}
-                      {isAlmostFull && (
-                        <span className="fade-in bg-orange-500 text-white text-xs font-bold px-2.5 py-0.5 rounded-full shadow-sm">
-                          ⚡ Dernières places
-                        </span>
-                      )}
-                      {isPopular && (
-                        <span className="fade-in bg-rose-500 text-white text-xs font-bold px-2.5 py-0.5 rounded-full shadow-sm">
-                          🔥 Populaire
-                        </span>
-                      )}
-                      {isOrganizer && (
-                        <span className="fade-in bg-yellow-400 text-yellow-900 text-xs font-bold px-2.5 py-0.5 rounded-full shadow-sm">
-                          👑 Ma sortie
-                        </span>
-                      )}
-                      {isClosed && (
-                        <span className="fade-in bg-slate-700 text-white text-xs font-semibold px-2.5 py-0.5 rounded-full shadow-sm">
-                          🔒 Clôturée
-                        </span>
-                      )}
-                      {!isClosed && isFull && (
-                        <span className="fade-in bg-red-500 text-white text-xs font-semibold px-2.5 py-0.5 rounded-full shadow-sm">
-                          Complet
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Haut-droit : bouton parcours si dispo, sinon emoji sport */}
-                    <div className="absolute top-3 right-3 flex items-center gap-1.5">
-                      {hasRoute ? (
+                      {/* Sport dot */}
+                      <div className="absolute top-1.5 left-1.5 text-sm drop-shadow">{SPORT_EMOJI[s.sport] ?? "🏅"}</div>
+                      {/* Parcours toggle */}
+                      {hasRoute && (
                         <button
                           type="button"
                           onClick={toggleMap}
-                          title={mapShown ? "Voir la photo" : "Voir le parcours"}
-                          className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full shadow-md transition-all duration-200 active:scale-95 ${
-                            mapShown
-                              ? "bg-emerald-500 text-white hover:bg-emerald-400"
-                              : "bg-white/90 text-slate-700 hover:bg-white backdrop-blur-sm"
-                          }`}
+                          className="absolute bottom-1 right-1 bg-white/90 text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow text-slate-600 hover:bg-white"
                         >
-                          {mapShown ? "📷 Photo" : "🗺️ Parcours"}
+                          {mapShown ? "📷" : "🗺️"}
                         </button>
-                      ) : (
-                        <span className="text-xl drop-shadow">{SPORT_EMOJI[s.sport] ?? "🏅"}</span>
                       )}
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                      <div>
+                        {/* Badges */}
+                        <div className="flex gap-1 flex-wrap mb-1">
+                          {isRecommended && <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">⭐ Top</span>}
+                          {isNew && !isOrganizer && <span className="text-[10px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">🆕 Nouveau</span>}
+                          {isAlmostFull && <span className="text-[10px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">⚡ Dernières places</span>}
+                          {isPopular && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-full">🔥 Populaire</span>}
+                          {isOrganizer && <span className="text-[10px] font-bold bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full">👑 Ma sortie</span>}
+                          {isClosed && <span className="text-[10px] font-semibold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">🔒 Clôturée</span>}
+                          {!isClosed && isFull && <span className="text-[10px] font-semibold bg-red-100 text-red-500 px-1.5 py-0.5 rounded-full">Complet</span>}
+                        </div>
+
+                        <h2 className="font-bold text-slate-900 text-sm leading-snug line-clamp-1">{s.titre}</h2>
+                        <p className="text-xs text-slate-500 truncate mt-0.5">📍 {s.lieu}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">📅 {s.date} · {s.heure}</p>
+                      </div>
+
+                      <div className="flex items-center justify-between mt-2 gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {s.niveau && (
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${NIVEAU_STYLE[s.niveau] ?? "bg-slate-100 text-slate-600"}`}>
+                              {s.niveau}
+                            </span>
+                          )}
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${isFull ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-500"}`}>
+                            👥 {s.nbParticipants ?? 0}/{s.participantsMax}
+                          </span>
+                        </div>
+                        {!isOrganizer && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); !dejaInscrit && !joining && rejoindre(s.id); }}
+                            disabled={!!joining || isFull || isClosed || dejaInscrit}
+                            className={`text-xs font-bold px-3 py-1.5 rounded-xl flex-shrink-0 transition-all active:scale-95 ${
+                              dejaInscrit || joined === s.id ? "bg-emerald-100 text-emerald-600"
+                              : isClosed || isFull ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                              : "bg-emerald-500 hover:bg-emerald-400 text-white shadow-sm"
+                            }`}
+                          >
+                            {joining === s.id ? "…" : dejaInscrit ? "✓" : isClosed ? "🔒" : isFull ? "Complet" : "Rejoindre"}
+                          </button>
+                        )}
+                        {isOrganizer && (
+                          <span className="text-xs font-semibold text-slate-400">⚙️ Gérer</span>
+                        )}
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="h-1 bg-slate-100 rounded-full overflow-hidden mt-1.5">
+                        <div className={`h-full rounded-full ${isClosed || isFull ? "bg-red-400" : pct > 70 ? "bg-orange-400" : "bg-emerald-400"}`} style={{ width: `${pct}%` }} />
+                      </div>
                     </div>
                   </div>
-
-                  {/* ── Contenu ── */}
-                  <div className="p-5 flex flex-col gap-3.5">
-
-                    <div className="flex flex-col gap-1.5">
-                      <span className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                        <span>📍</span>
-                        <span className="truncate">{s.lieu}</span>
-                      </span>
-                      <span className="flex items-center gap-2 text-sm text-slate-400">
-                        <span>📅</span>
-                        <span>{s.date} · {s.heure}</span>
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {s.niveau && (
-                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${NIVEAU_STYLE[s.niveau] ?? "bg-slate-100 text-slate-600"}`}>
-                          {s.niveau}
-                        </span>
-                      )}
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                        isFull ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600"
-                      }`}>
-                        👥 {s.nbParticipants ?? 0}/{s.participantsMax}
-                      </span>
-                    </div>
-
-                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          isClosed || isFull ? "bg-red-400" : pct > 70 ? "bg-orange-400" : "bg-emerald-400"
-                        }`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-
-                    <div className="flex gap-2">
-                      {!isOrganizer && (
-                        <button
-                          onClick={() => !dejaInscrit && !joining && rejoindre(s.id)}
-                          disabled={!!joining || isFull || isClosed || dejaInscrit}
-                          className={`flex-1 min-h-[44px] py-3 rounded-xl text-sm font-bold transition-all duration-200 ease-in-out active:scale-[0.97] ${
-                            dejaInscrit || joined === s.id
-                              ? "bg-emerald-100 text-emerald-600 cursor-default"
-                              : isClosed || isFull
-                              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white shadow-md hover:shadow-lg hover:scale-[1.02] disabled:opacity-50"
-                          }`}
-                        >
-                          {joining === s.id
-                            ? <span className="flex items-center justify-center gap-1.5"><span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Inscription…</span>
-                            : joined === s.id ? "✓ Inscrit !"
-                            : dejaInscrit ? "✓ Inscrit"
-                            : isClosed ? "🔒 Clôturée"
-                            : isFull ? "Complet"
-                            : "Rejoindre →"}
-                        </button>
-                      )}
-
-                      <Link href={`/sorties/${s.id}`} className={isOrganizer ? "flex-1" : ""}>
-                        <button className={`w-full min-h-[44px] py-3 rounded-xl text-sm font-semibold border-2 border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 active:scale-[0.97] transition-all duration-200 ease-in-out ${
-                          isOrganizer ? "" : "px-4"
-                        }`}>
-                          {isOrganizer ? "⚙️ Gérer" : "Voir"}
-                        </button>
-                      </Link>
-                    </div>
-
-                    {/* Micro urgence */}
-                    {!isOrganizer && !dejaInscrit && !isClosed && !isFull && places <= 3 && places > 0 && (
-                      <p className="text-xs text-orange-500 font-semibold text-center">
-                        ⏳ Plus que {places} place{places > 1 ? "s" : ""} disponible{places > 1 ? "s" : ""}
-                      </p>
-                    )}
-                    {!isOrganizer && !dejaInscrit && !isClosed && isAlmostFull && places > 3 && (
-                      <p className="text-xs text-orange-400 font-medium text-center">⚡ Presque complet</p>
-                    )}
-
-                  </div>
-                </div>
+                </Link>
               );
             })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
+
+        {/* ── RIGHT : carte sticky ── */}
+        <div className="hidden lg:block flex-1 sticky top-16 h-[calc(100vh-64px)]">
+          <ExploreMap
+            sorties={filtered}
+            hoveredId={hoveredSortie}
+            onHover={setHoveredSortie}
+            height="100%"
+          />
+        </div>
+
+        {/* ── Mobile : carte compacte en haut de liste ── */}
+        <div className="lg:hidden h-[280px] order-first">
+          <ExploreMap
+            sorties={filtered}
+            hoveredId={hoveredSortie}
+            onHover={setHoveredSortie}
+            height="280px"
+          />
+        </div>
+
       </div>
+
       {/* ── Toast activité (bas-gauche) ── */}
       <div className={`fixed bottom-6 left-6 z-40 max-w-xs transition-all duration-500 ${
         activityVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none"
