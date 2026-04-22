@@ -82,7 +82,7 @@ export async function GET() {
         nbParticipants: f["Nb participants"],
         latitude: f["Latitude"] ?? null,
         longitude: f["Longitude"] ?? null,
-        image: f["Carte"]?.[0]?.url || null,
+        image: (f["Carte"] as { url: string }[] | undefined)?.[0]?.url || null,
         participantIds: f["Participants IDs"]
           ? (f["Participants IDs"] as string).split(",").map((s) => s.trim())
           : [],
