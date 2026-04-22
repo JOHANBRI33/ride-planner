@@ -145,6 +145,10 @@ export default function Home() {
   const [activityVisible, setActivityVisible] = useState(false);
   const [showMapFor, setShowMapFor] = useState<Set<string>>(new Set());
   const [hoveredSortie, setHoveredSortie] = useState<string | null>(null);
+  const [userLat, setUserLat] = useState<number | null>(null);
+  const [userLng, setUserLng] = useState<number | null>(null);
+  const [filterRadius, setFilterRadius] = useState<number | null>(null);
+  const [locating, setLocating] = useState(false);
   const { user } = useUser();
   const router = useRouter();
 
@@ -185,6 +189,9 @@ export default function Home() {
       if (s.longitude < bounds.minLng || s.longitude > bounds.maxLng ||
           s.latitude < bounds.minLat || s.latitude > bounds.maxLat) return false;
     }
+    if (filterRadius && userLat && userLng && s.latitude && s.longitude) {
+      if (haversineKm(userLat, userLng, s.latitude, s.longitude) > filterRadius) return false;
+    }
     return true;
   });
 
@@ -202,10 +209,28 @@ export default function Home() {
   const countParticipants = useCountUp(loading ? 0 : totalParticipants);
   const countSports = useCountUp(loading ? 0 : totalSports);
 
-  const hasFilters = filterSport || filterNiveau || filterDate;
+  const hasFilters = filterSport || filterNiveau || filterDate || filterRadius;
 
   function resetFilters() {
     setFilterSport(""); setFilterNiveau(""); setFilterDate(""); setBounds(null);
+    setFilterRadius(null); setUserLat(null); setUserLng(null);
+  }
+
+  function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function locateMe() {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setUserLat(pos.coords.latitude); setUserLng(pos.coords.longitude); setFilterRadius((r) => r ?? 20); setLocating(false); },
+      () => setLocating(false)
+    );
   }
 
   async function rejoindre(id: string) {
@@ -326,6 +351,19 @@ export default function Home() {
             {NIVEAUX.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
           <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className={filterCls} />
+          {/* Distance filter */}
+          {userLat && userLng ? (
+            <select value={filterRadius ?? ""} onChange={(e) => setFilterRadius(e.target.value ? Number(e.target.value) : null)} className={filterCls}>
+              <option value="5">📍 5 km</option>
+              <option value="10">📍 10 km</option>
+              <option value="20">📍 20 km</option>
+              <option value="50">📍 50 km</option>
+            </select>
+          ) : (
+            <button onClick={locateMe} disabled={locating} className={`${filterCls} flex items-center gap-1.5 cursor-pointer disabled:opacity-60`}>
+              {locating ? "⏳" : "📍"} {locating ? "Localisation…" : "Près de moi"}
+            </button>
+          )}
           {(hasFilters || bounds) && (
             <button onClick={resetFilters} className="text-xs text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-all">
               ✕ Réinitialiser
@@ -384,10 +422,10 @@ export default function Home() {
       </div>
 
       {/* ── Split layout : liste + carte ── */}
-      <div id="sorties-grid" className="flex flex-col lg:flex-row lg:h-[calc(100vh-64px)]">
+      <div id="sorties-grid" className="flex flex-col lg:flex-row lg:items-start">
 
-        {/* ── LEFT : liste scrollable ── */}
-        <div className="w-full lg:w-[460px] xl:w-[520px] flex-shrink-0 overflow-y-auto lg:border-r border-slate-100 bg-white">
+        {/* ── LEFT : liste (natural page scroll) ── */}
+        <div className="w-full lg:w-[480px] xl:w-[540px] flex-shrink-0 lg:border-r border-slate-100 bg-white">
           <div className="px-4 sm:px-5 py-4">
 
             {/* Skeletons */}
@@ -551,7 +589,7 @@ export default function Home() {
         </div>
 
         {/* ── RIGHT : carte sticky ── */}
-        <div className="hidden lg:block flex-1 sticky top-16 h-[calc(100vh-64px)]">
+        <div className="hidden lg:block flex-1 sticky top-16 h-[calc(100vh-64px)] min-w-[360px]">
           <ExploreMap
             sorties={filtered}
             hoveredId={hoveredSortie}
