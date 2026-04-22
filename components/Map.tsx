@@ -54,6 +54,7 @@ export default function Map({
     function emitBounds() {
       if (!onBoundsChange) return;
       const b = map.getBounds();
+      if (!b) return;
       onBoundsChange({
         minLng: b.getWest(),
         maxLng: b.getEast(),
