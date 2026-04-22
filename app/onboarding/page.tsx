@@ -113,7 +113,7 @@ export default function OnboardingPage() {
   const isSelected = (value: string) =>
     current.type === "multi"
       ? prefs.sports.includes(value)
-      : (prefs as Record<string, string>)[current.id] === value;
+      : (prefs as Record<string, string | string[]>)[current.id] === value;
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col items-center justify-center px-4 py-12">
