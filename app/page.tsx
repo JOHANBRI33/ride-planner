@@ -589,7 +589,7 @@ export default function Home() {
         </div>
 
         {/* ── RIGHT : carte sticky ── */}
-        <div className="hidden lg:block flex-1 sticky top-16 h-[calc(100vh-64px)] min-w-[360px]">
+        <div className="hidden lg:block flex-1 sticky top-16 h-[60vh] min-w-[360px] max-w-[520px]">
           <ExploreMap
             sorties={filtered}
             hoveredId={hoveredSortie}
@@ -599,7 +599,7 @@ export default function Home() {
         </div>
 
         {/* ── Mobile : carte compacte en haut de liste ── */}
-        <div className="lg:hidden h-[280px] order-first">
+        <div className="lg:hidden h-[300px] order-first rounded-xl overflow-hidden mx-4 mt-4">
           <ExploreMap
             sorties={filtered}
             hoveredId={hoveredSortie}

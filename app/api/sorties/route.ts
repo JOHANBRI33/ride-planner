@@ -67,13 +67,44 @@ export async function POST(request: Request) {
   }
 }
 
+// Geocode a place name → {lat, lng} using Mapbox, cached 24 h by Next.js fetch
+async function geocodeLieu(lieu: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    if (!token) return null;
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(lieu)}.json?access_token=${token}&limit=1&country=fr`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const center = json.features?.[0]?.center as [number, number] | undefined;
+    if (!center) return null;
+    return { lng: center[0], lat: center[1] };
+  } catch { return null; }
+}
+
 export async function GET() {
   try {
     const base = getBase();
     const records = await base("sorties").select().firstPage();
 
-    const data = records.map((record) => {
+    const data = await Promise.all(records.map(async (record) => {
       const f = record.fields;
+      let lat = (f["Latitude"] as number) ?? null;
+      let lng = (f["Longitude"] as number) ?? null;
+
+      // Auto-geocode records that have a place name but no coordinates
+      if ((lat == null || lng == null) && f["Lieu précis"]) {
+        const geo = await geocodeLieu(f["Lieu précis"] as string);
+        if (geo) {
+          lat = geo.lat;
+          lng = geo.lng;
+          // Persist back to Airtable so next request is instant
+          base("sorties")
+            .update([{ id: record.id, fields: { Latitude: geo.lat, Longitude: geo.lng } }])
+            .catch(() => {});
+        }
+      }
+
       return {
         id: record.id,
         titre: f["Titre"] || "",
@@ -84,8 +115,8 @@ export async function GET() {
         lieu: f["Lieu précis"],
         participantsMax: f["Participants max"],
         nbParticipants: f["Nb participants"],
-        latitude: f["Latitude"] ?? null,
-        longitude: f["Longitude"] ?? null,
+        latitude: lat,
+        longitude: lng,
         image: (f["Carte"] as { url: string }[] | undefined)?.[0]?.url || null,
         image_url: (f["image_url"] as string) ?? null,
         participantIds: f["Participants IDs"]
@@ -102,7 +133,7 @@ export async function GET() {
         elevationGain: (f["elevationGain"] as number) ?? null,
         route_geometry: (f["route_geometry"] as string) ?? null,
       };
-    });
+    }));
 
     return Response.json(data);
   } catch (error) {
