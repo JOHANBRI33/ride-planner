@@ -91,20 +91,10 @@ function motivationMessage(data: WeatherData): { text: string; color: string } |
 // ─── API call ─────────────────────────────────────────────────────────────────
 
 async function fetchWeather(lat: number, lon: number): Promise<WeatherData | null> {
-  const key = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY;
-  if (!key) return null;
-
-  const base = "https://api.openweathermap.org/data/2.5";
-  const params = `lat=${lat}&lon=${lon}&appid=${key}&units=metric&lang=fr`;
-
-  const [currentRes, forecastRes] = await Promise.all([
-    fetch(`${base}/weather?${params}`),
-    fetch(`${base}/forecast?${params}&cnt=40`),
-  ]);
-
-  if (!currentRes.ok || !forecastRes.ok) return null;
-  const current = await currentRes.json();
-  const forecastRaw = await forecastRes.json();
+  const res = await fetch(`/api/weather?lat=${lat}&lon=${lon}`);
+  if (!res.ok) return null;
+  const { current, forecast: forecastRaw, error } = await res.json();
+  if (error) return null;
 
   const { emoji, label } = owmToEmoji(current.weather[0].id, current.weather[0].icon);
 
