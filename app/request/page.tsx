@@ -3,14 +3,14 @@
 export const dynamic = "force-dynamic";
 
 import { useRef, useState, useCallback } from "react";
-import dynamic from "next/dynamic";
+import _dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
 import { parseGPX, type GPXData } from "@/lib/gpx/parseGPX";
 import { getDifficulty } from "@/lib/elevation/elevationService";
 
-const PickLocationMap = dynamic(() => import("@/components/PickLocationMap"), { ssr: false });
+const PickLocationMap = _dynamic(() => import("@/components/PickLocationMap"), { ssr: false });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

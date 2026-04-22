@@ -1,4 +1,4 @@
-import Airtable from "airtable";
+import Airtable, { type FieldSet } from "airtable";
 
 function getBase() {
   return new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
@@ -53,10 +53,10 @@ export async function POST(request: Request) {
 
     let record;
     try {
-      const records = await getBase()("ride_requests").create([{ fields: { ...core, ...optional } }]);
+      const records = await getBase()("ride_requests").create([{ fields: { ...core, ...optional } as FieldSet }]);
       record = records[0];
     } catch {
-      const records = await getBase()("ride_requests").create([{ fields: core }]);
+      const records = await getBase()("ride_requests").create([{ fields: core as FieldSet }]);
       record = records[0];
     }
 

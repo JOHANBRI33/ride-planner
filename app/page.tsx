@@ -3,16 +3,16 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
+import _dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
 import { resolveSortieImage, SPORT_IMAGE_FALLBACK } from "@/lib/getAutoImage";
 import { parseRoute } from "@/lib/mapbox/parseRoute";
 
-const Map = dynamic(() => import("@/components/Map"), { ssr: false });
-const MiniMapPreview = dynamic(() => import("@/components/MiniMapPreview"), { ssr: false });
-const WeatherWidget = dynamic(() => import("@/components/WeatherWidget"), { ssr: false });
+const Map = _dynamic(() => import("@/components/Map"), { ssr: false });
+const MiniMapPreview = _dynamic(() => import("@/components/MiniMapPreview"), { ssr: false });
+const WeatherWidget = _dynamic(() => import("@/components/WeatherWidget"), { ssr: false });
 
 type Sortie = {
   id: string;
