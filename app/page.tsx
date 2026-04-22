@@ -13,6 +13,7 @@ import { parseRoute } from "@/lib/mapbox/parseRoute";
 const Map = _dynamic(() => import("@/components/Map"), { ssr: false });
 const MiniMapPreview = _dynamic(() => import("@/components/MiniMapPreview"), { ssr: false });
 const WeatherWidget = _dynamic(() => import("@/components/WeatherWidget"), { ssr: false });
+const CommunityActivity = _dynamic(() => import("@/components/CommunityActivity"), { ssr: false });
 
 type Sortie = {
   id: string;
@@ -355,6 +356,9 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* ── Activité communautaire ── */}
+      <CommunityActivity />
 
       {/* ── Bandeau personnalisation ── */}
       <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-indigo-100">
