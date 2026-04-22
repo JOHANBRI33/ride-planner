@@ -53,6 +53,36 @@ function sportColor(sport: string) {
   return SPORT_COLOR[sport] ?? DEFAULT_COLOR;
 }
 
+// ── Marker style (mutates existing element — no DOM recreation) ───────────
+
+function applyMarkerStyle(el: HTMLDivElement, s: MapSortie, hovered: boolean) {
+  const color  = sportColor(s.sport);
+  const emoji  = SPORT_EMOJI[s.sport] ?? "🏅";
+  const label  = s.sport.split(" ")[0];
+
+  el.innerHTML = `<span style="font-size:13px;line-height:1">${emoji}</span><span style="font-size:11px;font-weight:700;letter-spacing:-.01em">${label}</span>`;
+  el.style.cssText = `
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: ${hovered ? "5px 10px" : "4px 8px"};
+    background: ${hovered ? color : "#fff"};
+    color: ${hovered ? "#fff" : "#1e293b"};
+    border: 2px solid ${color};
+    border-radius: 999px;
+    box-shadow: ${hovered ? `0 4px 14px ${color}66` : "0 2px 6px rgba(0,0,0,.18)"};
+    cursor: pointer;
+    white-space: nowrap;
+    transform: scale(${hovered ? "1.1" : "1"});
+    transform-origin: center bottom;
+    transition: transform .12s ease, box-shadow .12s ease, background .12s ease, color .12s ease;
+    user-select: none;
+    position: relative;
+    z-index: ${hovered ? "10" : "1"};
+    font-family: system-ui, sans-serif;
+  `;
+}
+
 // ── Popup HTML ─────────────────────────────────────────────────────────────
 
 function buildPopupHTML(s: MapSortie): string {
@@ -68,12 +98,8 @@ function buildPopupHTML(s: MapSortie): string {
         <img src="${img}" alt="" style="width:100%;height:100%;object-fit:cover;"
           onerror="this.src='https://images.unsplash.com/photo-1517649763962-0c623066013b?w=400&q=60'" />
         <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.55) 0%,transparent 60%)"></div>
-        <div style="position:absolute;top:7px;right:7px;background:${sportColor(s.sport)};color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;">
-          ${s.sport}
-        </div>
-        <div style="position:absolute;bottom:7px;left:8px;right:8px;color:#fff;font-size:12px;font-weight:700;line-height:1.2;">
-          ${s.titre}
-        </div>
+        <div style="position:absolute;top:7px;right:7px;background:${sportColor(s.sport)};color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;">${s.sport}</div>
+        <div style="position:absolute;bottom:7px;left:8px;right:8px;color:#fff;font-size:12px;font-weight:700;line-height:1.2;">${s.titre}</div>
       </div>
       <div style="padding:9px 11px;background:#fff;">
         <div style="font-size:11px;color:#64748b;margin-bottom:5px;">📍 ${s.lieu}</div>
@@ -95,55 +121,23 @@ function buildPopupHTML(s: MapSortie): string {
   `;
 }
 
-// ── Marker pill factory (Airbnb style) ────────────────────────────────────
-
-function createMarkerEl(s: MapSortie, hovered = false): HTMLDivElement {
-  const el = document.createElement("div");
-  applyMarkerStyle(el, s, hovered);
-  return el;
-}
-
-function applyMarkerStyle(el: HTMLDivElement, s: MapSortie, hovered: boolean) {
-  const color = sportColor(s.sport);
-  const emoji = SPORT_EMOJI[s.sport] ?? "🏅";
-  // Show distance if available, else sport short name
-  const label = s.sport.split(" ")[0]; // "Vélo", "Trail", "Course"…
-
-  el.innerHTML = `<span style="font-size:13px;line-height:1">${emoji}</span><span style="font-size:11px;font-weight:700;letter-spacing:-.01em">${label}</span>`;
-  el.style.cssText = `
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: ${hovered ? "5px 10px" : "4px 8px"};
-    background: ${hovered ? color : "#fff"};
-    color: ${hovered ? "#fff" : "#1e293b"};
-    border: 2px solid ${color};
-    border-radius: 999px;
-    box-shadow: ${hovered ? `0 6px 20px ${color}55` : "0 2px 8px rgba(0,0,0,.18)"};
-    cursor: pointer;
-    white-space: nowrap;
-    transform: scale(${hovered ? "1.15" : "1"});
-    transform-origin: center bottom;
-    transition: transform .15s ease, box-shadow .15s ease, background .15s ease, color .15s ease;
-    user-select: none;
-    z-index: ${hovered ? "10" : "1"};
-    position: relative;
-    font-family: system-ui, sans-serif;
-  `;
-}
-
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function ExploreMap({ sorties, hoveredId, onHover, height = "100%" }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef       = useRef<mapboxgl.Map | null>(null);
-  const markersRef   = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLDivElement; sortie: MapSortie }>>(new Map());
-  const popupRef     = useRef<mapboxgl.Popup | null>(null);
-  const router       = useRouter();
+  const containerRef   = useRef<HTMLDivElement>(null);
+  const mapRef         = useRef<mapboxgl.Map | null>(null);
+  const markersRef     = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLDivElement; sortie: MapSortie }>>(new Map());
+  const popupRef       = useRef<mapboxgl.Popup | null>(null);
+  const hasFitRef      = useRef(false);   // fitBounds only once, on initial data load
+  const onHoverRef     = useRef(onHover); // stable ref — avoids stale closure in event listeners
+  const router         = useRouter();
 
-  // ── Init map (once) ────────────────────────────────────────────────────
+  // Keep callback ref current without recreating markers
+  useEffect(() => { onHoverRef.current = onHover; }, [onHover]);
+
+  // ── Init map (once, never recreated) ──────────────────────────────────
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (mapRef.current || !containerRef.current) return; // guard: only init once
     mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
     const map = new mapboxgl.Map({
@@ -151,6 +145,8 @@ export default function ExploreMap({ sorties, hoveredId, onHover, height = "100%
       style: "mapbox://styles/mapbox/outdoors-v12",
       center: [-0.5792, 44.8378],
       zoom: 8,
+      // Disable default scroll-zoom fighting with page scroll
+      scrollZoom: false,
     });
 
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
@@ -159,48 +155,61 @@ export default function ExploreMap({ sorties, hoveredId, onHover, height = "100%
       "top-right"
     );
 
-    const popup = new mapboxgl.Popup({
+    // Re-enable scroll zoom only when cursor is inside the map
+    map.getCanvas().addEventListener("mouseenter", () => map.scrollZoom.enable());
+    map.getCanvas().addEventListener("mouseleave", () => map.scrollZoom.disable());
+
+    popupRef.current = new mapboxgl.Popup({
       closeButton: false,
       closeOnClick: false,
-      offset: 18,
+      offset: 16,
       className: "explore-popup",
     });
-    popupRef.current = popup;
+
     mapRef.current = map;
 
-    return () => { map.remove(); mapRef.current = null; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      map.remove();
+      mapRef.current  = null;
+      hasFitRef.current = false;
+    };
   }, []);
 
-  // ── Rebuild markers when sorties change ────────────────────────────────
+  // ── Sync markers when sorties change (diff — no full rebuild) ─────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    function rebuildMarkers() {
-      // Remove existing markers
-      markersRef.current.forEach(({ marker }) => marker.remove());
-      markersRef.current.clear();
-      popupRef.current?.remove();
+    function syncMarkers() {
+      const incoming = new Map(sorties.filter(s => s.latitude != null && s.longitude != null).map(s => [s.id, s]));
+      const existing = markersRef.current;
 
-      const valid = sorties.filter((s) => s.latitude != null && s.longitude != null);
-      if (valid.length === 0) return;
+      // Remove markers no longer in filtered set
+      existing.forEach(({ marker }, id) => {
+        if (!incoming.has(id)) {
+          marker.remove();
+          existing.delete(id);
+        }
+      });
 
-      // Fit bounds to all visible sorties
+      // Add markers that are new
       const bounds = new mapboxgl.LngLatBounds();
+      let newCount = 0;
 
-      valid.forEach((s) => {
+      incoming.forEach((s) => {
         bounds.extend([s.longitude!, s.latitude!]);
 
-        const el = createMarkerEl(s, false);
+        if (existing.has(s.id)) return; // already on map
+
+        const el = document.createElement("div");
+        applyMarkerStyle(el, s, false);
 
         const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
           .setLngLat([s.longitude!, s.latitude!])
           .addTo(map!);
 
-        // Hover: show popup + highlight
         el.addEventListener("mouseenter", () => {
-          onHover(s.id);
+          onHoverRef.current(s.id);
           applyMarkerStyle(el, s, true);
           popupRef.current
             ?.setLngLat([s.longitude!, s.latitude!])
@@ -209,46 +218,39 @@ export default function ExploreMap({ sorties, hoveredId, onHover, height = "100%
         });
 
         el.addEventListener("mouseleave", () => {
-          if (hoveredId !== s.id) {
-            applyMarkerStyle(el, s, false);
-          }
-          onHover(null);
+          onHoverRef.current(null);
+          applyMarkerStyle(el, s, false);
           popupRef.current?.remove();
         });
 
         el.addEventListener("click", () => router.push(`/sorties/${s.id}`));
 
-        markersRef.current.set(s.id, { marker, el, sortie: s });
+        existing.set(s.id, { marker, el, sortie: s });
+        newCount++;
       });
 
-      map!.fitBounds(bounds, { padding: 60, maxZoom: 13, duration: 800 });
+      // fitBounds only on the very first data load (not on every filter change)
+      if (!hasFitRef.current && incoming.size > 0) {
+        map!.fitBounds(bounds, { padding: 60, maxZoom: 13, duration: 700 });
+        hasFitRef.current = true;
+      }
     }
 
     if (map.isStyleLoaded()) {
-      rebuildMarkers();
+      syncMarkers();
     } else {
-      map.once("load", rebuildMarkers);
+      map.once("load", syncMarkers);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sorties]);
 
-  // ── Sync hover from list ───────────────────────────────────────────────
+  // ── Sync hover highlight — NO map movement ────────────────────────────
   useEffect(() => {
     markersRef.current.forEach(({ el, sortie }, id) => {
       applyMarkerStyle(el, sortie, id === hoveredId);
     });
-
-    if (hoveredId) {
-      const s = sorties.find((s) => s.id === hoveredId);
-      if (s?.latitude != null && s?.longitude != null) {
-        mapRef.current?.easeTo({
-          center: [s.longitude, s.latitude],
-          zoom: Math.max(mapRef.current.getZoom(), 11),
-          duration: 300,
-        });
-      }
-    }
-  }, [hoveredId, sorties]);
+    // ⚠️ No easeTo / flyTo here — hover must never move the map
+  }, [hoveredId]);
 
   return (
     <>

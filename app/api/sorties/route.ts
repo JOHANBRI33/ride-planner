@@ -67,18 +67,33 @@ export async function POST(request: Request) {
   }
 }
 
+// Bounding box métropolitaine France (lng_min, lat_min, lng_max, lat_max)
+const FRANCE_BBOX = [-5.14, 41.33, 9.56, 51.09];
+
+function inFrance(lng: number, lat: number): boolean {
+  return lng >= FRANCE_BBOX[0] && lng <= FRANCE_BBOX[2]
+      && lat >= FRANCE_BBOX[1] && lat <= FRANCE_BBOX[3];
+}
+
 // Geocode a place name → {lat, lng} using Mapbox, cached 24 h by Next.js fetch
+// Uses types=address,place + bbox France to avoid results in the ocean
 async function geocodeLieu(lieu: string): Promise<{ lat: number; lng: number } | null> {
   try {
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
     if (!token) return null;
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(lieu)}.json?access_token=${token}&limit=1&country=fr`;
+    const bbox  = FRANCE_BBOX.join(",");
+    const types = "address,place,locality,neighborhood";
+    const url   = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(lieu)}.json`
+                + `?access_token=${token}&limit=1&country=fr&types=${types}&bbox=${bbox}&language=fr`;
     const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return null;
-    const json = await res.json();
+    const json   = await res.json();
     const center = json.features?.[0]?.center as [number, number] | undefined;
     if (!center) return null;
-    return { lng: center[0], lat: center[1] };
+    const [lng, lat] = center;
+    // Reject anything that landed outside France (safety net)
+    if (!inFrance(lng, lat)) return null;
+    return { lng, lat };
   } catch { return null; }
 }
 
