@@ -33,13 +33,15 @@ export async function POST(request: Request) {
       return Response.json({ error: "Champs manquants" }, { status: 400 });
     }
     const base = getBase();
-    const record = await base("chat").create({
-      userId,
-      email,
-      message: message.trim(),
-      createdAt: new Date().toISOString(),
-    });
-    return Response.json({ id: record.id }, { status: 201 });
+    const records = await base("chat").create([{
+      fields: {
+        userId,
+        email,
+        message: message.trim(),
+        createdAt: new Date().toISOString(),
+      },
+    }]);
+    return Response.json({ id: records[0].id }, { status: 201 });
   } catch (error) {
     console.error("Chat POST error:", error);
     return Response.json({ error: "Erreur envoi" }, { status: 500 });

@@ -50,15 +50,17 @@ export async function POST(request: Request) {
     }
 
     const base = getBase();
-    const record = await base("messages").create({
-      sortieId,
-      userId,
-      email,
-      "Message utilisateur": message.trim(),
-      createdAt: new Date().toISOString(),
-    });
+    const records = await base("messages").create([{
+      fields: {
+        sortieId,
+        userId,
+        email,
+        "Message utilisateur": message.trim(),
+        createdAt: new Date().toISOString(),
+      },
+    }]);
 
-    return Response.json({ id: record.id }, { status: 201 });
+    return Response.json({ id: records[0].id }, { status: 201 });
   } catch (error) {
     console.error("Messages POST error:", error);
     return Response.json({ error: "Erreur envoi message" }, { status: 500 });
