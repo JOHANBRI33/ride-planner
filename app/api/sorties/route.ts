@@ -37,6 +37,9 @@ export async function POST(request: Request) {
     if (body.organizerId)       optionalFields["status"]         = "open";
     if (body.route)             optionalFields["route"]          = body.route;
     if (body.image_url)         optionalFields["image_url"]      = body.image_url;
+    if (body.distanceKm != null)  optionalFields["distanceKm"]     = Number(body.distanceKm);
+    if (body.elevationGain != null) optionalFields["elevationGain"] = Number(body.elevationGain);
+    if (body.route_geometry)      optionalFields["route_geometry"] = body.route_geometry;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async function createRecord(fields: Record<string, any>) {
@@ -95,6 +98,9 @@ export async function GET() {
         organizerEmail: f["organizerEmail"] ?? null,
         status: (f["status"] as string) ?? "open",
         route: (f["route"] as string) ?? null,
+        distanceKm: (f["distanceKm"] as number) ?? null,
+        elevationGain: (f["elevationGain"] as number) ?? null,
+        route_geometry: (f["route_geometry"] as string) ?? null,
       };
     });
 

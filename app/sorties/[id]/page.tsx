@@ -31,6 +31,9 @@ type Sortie = {
   organizerEmail?: string | null;
   status?: string;
   route?: string | null;
+  distanceKm?: number | null;
+  elevationGain?: number | null;
+  route_geometry?: string | null;
 };
 
 type Message = {
@@ -213,10 +216,21 @@ export default function SortiePage() {
     ? [{ id: sortie.id, titre: sortie.titre, date: sortie.date, heure: sortie.heure, latitude: sortie.latitude, longitude: sortie.longitude, color: "#2563eb" }]
     : [];
 
+  // Priority: route_geometry field → route JSON → null
+  function parseGeometryField(raw: string | null | undefined): [number,number][] | null {
+    if (!raw) return null;
+    try {
+      const p = JSON.parse(raw);
+      if (Array.isArray(p) && p.length >= 2) return p as [number,number][];
+    } catch { /* */ }
+    return null;
+  }
+
   const parsedRouteData = parseRoute(sortie.route);
-  const parsedRoute = parsedRouteData?.geometry;
-  const routeDistance = parsedRouteData?.distanceKm ?? null;
-  const routeGain = parsedRouteData?.gain ?? null;
+  const geometryFromField = parseGeometryField(sortie.route_geometry);
+  const parsedRoute = parsedRouteData?.geometry ?? geometryFromField ?? undefined;
+  const routeDistance = parsedRouteData?.distanceKm ?? sortie.distanceKm ?? null;
+  const routeGain = parsedRouteData?.gain ?? sortie.elevationGain ?? null;
   const routeLoss = parsedRouteData?.loss ?? null;
   const routeSlopes = parsedRouteData?.slopes;
   const difficulty = routeGain != null && routeDistance != null && routeGain > 0

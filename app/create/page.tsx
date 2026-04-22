@@ -1,13 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
-import dynamic from "next/dynamic";
+import _dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
 import type { StoredRoute } from "@/lib/elevation/elevationService";
 
-const RoutePickerMap = dynamic(() => import("@/components/RoutePickerMap"), { ssr: false });
+const RoutePickerMap = _dynamic(() => import("@/components/RoutePickerMap"), { ssr: false });
 
 const SPORTS = ["Course à pied", "Vélo", "Randonnée", "Trail", "Natation", "Triathlon", "Autre"];
 const NIVEAUX = ["Débutant", "Intermédiaire", "Avancé", "Expert"];
@@ -38,6 +38,32 @@ export default function CreatePage() {
     setSuccess(false);
 
     const form = e.currentTarget;
+
+    // resolve route
+    let finalRoute: string | null = storedRoute ? JSON.stringify(storedRoute) : routePoints.length >= 2 ? JSON.stringify(routePoints) : null;
+    let finalGeometry: string | null = null;
+    let finalDistanceKm: number | null = storedRoute?.distanceKm ?? null;
+    let finalElevationGain: number | null = storedRoute?.gain ?? null;
+
+    if (storedRoute) {
+      finalGeometry = JSON.stringify(storedRoute.geometry);
+    } else if (routePoints.length >= 2) {
+      // fallback: compute route server-side
+      try {
+        const r = await fetch("/api/route", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ waypoints: routePoints, mode: "cycling" }),
+        });
+        if (r.ok) {
+          const rd = await r.json();
+          finalGeometry = JSON.stringify(rd.geometry);
+          finalDistanceKm = rd.distanceKm;
+          finalRoute = JSON.stringify({ v: 2, geometry: rd.geometry, distanceKm: rd.distanceKm, durationMin: rd.durationMin });
+        }
+      } catch { /* ignore */ }
+    }
+
     const data = {
       titre: (form.elements.namedItem("titre") as HTMLInputElement).value,
       date: (form.elements.namedItem("date") as HTMLInputElement).value,
@@ -50,7 +76,10 @@ export default function CreatePage() {
       longitude: coords?.lng ?? null,
       organizerId: user.id,
       organizerEmail: user.email,
-      route: storedRoute ? JSON.stringify(storedRoute) : routePoints.length >= 2 ? JSON.stringify(routePoints) : null,
+      route: finalRoute,
+      route_geometry: finalGeometry,
+      distanceKm: finalDistanceKm,
+      elevationGain: finalElevationGain,
     };
 
     const res = await fetch("/api/sorties", {
