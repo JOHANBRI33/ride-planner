@@ -89,7 +89,7 @@ export default function SortiePage() {
   const isAtBottomRef = useRef(true); // ne scroll que si l'utilisateur est déjà en bas du chat
 
   useEffect(() => {
-    fetch("/api/sorties")
+    fetch("/api/sorties?includePast=true")
       .then((r) => r.json())
       .then((data: Sortie[]) => {
         const found = data.find((s) => s.id === id);
@@ -135,7 +135,7 @@ export default function SortiePage() {
       setJoinSuccess(true);
       setTimeout(() => setJoinSuccess(false), 4000);
     }
-    const data: Sortie[] = await fetch("/api/sorties").then((r) => r.json());
+    const data: Sortie[] = await fetch("/api/sorties?includePast=true").then((r) => r.json());
     const updated = data.find((s) => s.id === id);
     if (updated) setSortie(updated);
     setJoining(false);
@@ -149,7 +149,7 @@ export default function SortiePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: user.id, userEmail: user.email }),
     });
-    const data: Sortie[] = await fetch("/api/sorties").then((r) => r.json());
+    const data: Sortie[] = await fetch("/api/sorties?includePast=true").then((r) => r.json());
     const updated = data.find((s) => s.id === id);
     if (updated) setSortie(updated);
     setLeaving(false);
@@ -163,7 +163,7 @@ export default function SortiePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: user.id }),
     });
-    const data: Sortie[] = await fetch("/api/sorties").then((r) => r.json());
+    const data: Sortie[] = await fetch("/api/sorties?includePast=true").then((r) => r.json());
     const updated = data.find((s) => s.id === id);
     if (updated) setSortie(updated);
     setClosing(false);
