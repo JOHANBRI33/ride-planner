@@ -72,6 +72,8 @@ export default function SortiePage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [joinSuccess, setJoinSuccess] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [closing, setClosing] = useState(false);
 
@@ -124,7 +126,25 @@ export default function SortiePage() {
   async function rejoindre() {
     if (!user) { router.push(`/login?redirect=/sorties/${id}`); return; }
     setJoining(true);
-    await fetch(`/api/sorties/${id}?action=join`, {
+    const res = await fetch(`/api/sorties/${id}?action=join`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user.id, userEmail: user.email }),
+    });
+    if (res.ok) {
+      setJoinSuccess(true);
+      setTimeout(() => setJoinSuccess(false), 4000);
+    }
+    const data: Sortie[] = await fetch("/api/sorties").then((r) => r.json());
+    const updated = data.find((s) => s.id === id);
+    if (updated) setSortie(updated);
+    setJoining(false);
+  }
+
+  async function quitter() {
+    if (!user || !confirm("Annuler ta participation à cette sortie ?")) return;
+    setLeaving(true);
+    await fetch(`/api/sorties/${id}?action=leave`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: user.id, userEmail: user.email }),
@@ -132,7 +152,7 @@ export default function SortiePage() {
     const data: Sortie[] = await fetch("/api/sorties").then((r) => r.json());
     const updated = data.find((s) => s.id === id);
     if (updated) setSortie(updated);
-    setJoining(false);
+    setLeaving(false);
   }
 
   async function cloturerSortie() {
@@ -413,10 +433,13 @@ export default function SortiePage() {
                 <div className="flex flex-wrap gap-2 mt-3">
                   {sortie.participantEmails!.map((email) => (
                     <div key={email} className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 transition-colors rounded-full pl-1 pr-3 py-1">
-                      <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                        {email[0].toUpperCase()}
-                      </div>
+                      <img
+                        src={`https://api.dicebear.com/9.x/bottts/svg?seed=${encodeURIComponent(email)}`}
+                        alt=""
+                        className="w-6 h-6 rounded-full bg-white flex-shrink-0"
+                      />
                       <span className="text-xs text-slate-600 font-medium">{email}</span>
+                      {user?.email === email && <span className="text-[10px] text-blue-500 font-bold ml-0.5">Moi</span>}
                     </div>
                   ))}
                 </div>
@@ -485,28 +508,49 @@ export default function SortiePage() {
               )}
             </div>
 
-            {/* Bouton rejoindre */}
+            {/* Toast succès inscription */}
+            {joinSuccess && (
+              <div className="fade-in flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3 text-sm text-emerald-700 font-medium">
+                <span className="text-base">🎉</span>
+                <span>Tu es inscrit ! Tu peux maintenant discuter avec les autres participants ci-dessous.</span>
+              </div>
+            )}
+
+            {/* Bouton rejoindre / annuler */}
             {!isOrganizer && (
-              <button
-                onClick={rejoindre}
-                disabled={joining || isFull || isClosed || dejaInscrit}
-                className={`w-full py-3.5 rounded-2xl font-bold text-base transition-all duration-200 ease-in-out active:scale-[0.98] ${
-                  dejaInscrit
-                    ? "bg-emerald-100 text-emerald-600 cursor-default"
-                    : isClosed
-                    ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                    : isFull
-                    ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                    : "bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white shadow-sm shadow-emerald-200 hover:shadow-md disabled:opacity-60"
-                }`}
-              >
-                {joining
-                  ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Inscription…</span>
-                  : dejaInscrit ? "✅ Déjà inscrit"
-                  : isClosed ? "🔒 Sortie clôturée"
-                  : isFull ? "Complet"
-                  : "Rejoindre cette sortie"}
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={rejoindre}
+                  disabled={joining || isFull || isClosed || dejaInscrit}
+                  className={`w-full py-3.5 rounded-2xl font-bold text-base transition-all duration-200 ease-in-out active:scale-[0.98] ${
+                    dejaInscrit
+                      ? "bg-emerald-100 text-emerald-600 cursor-default"
+                      : isClosed
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      : isFull
+                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      : "bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white shadow-sm shadow-emerald-200 hover:shadow-md disabled:opacity-60"
+                  }`}
+                >
+                  {joining
+                    ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Inscription…</span>
+                    : dejaInscrit ? "✅ Tu participes à cette sortie"
+                    : isClosed ? "🔒 Sortie clôturée"
+                    : isFull ? "Complet"
+                    : "Rejoindre cette sortie"}
+                </button>
+                {dejaInscrit && (
+                  <button
+                    onClick={quitter}
+                    disabled={leaving}
+                    className="w-full py-2 rounded-2xl text-sm font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 border border-slate-200 hover:border-red-200 transition-all duration-200"
+                  >
+                    {leaving
+                      ? <span className="flex items-center justify-center gap-2"><span className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin inline-block" />Annulation…</span>
+                      : "Annuler ma participation"}
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Modifier le tracé (organisateur) */}

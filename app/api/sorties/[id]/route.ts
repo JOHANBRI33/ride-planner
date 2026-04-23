@@ -23,7 +23,7 @@ function sanitizeRoute(raw: string): string {
   } catch { return raw; }
 }
 
-// PATCH : rejoindre (?action=join, défaut) ou clôturer (?action=close)
+// PATCH : rejoindre (?action=join, défaut), clôturer (?action=close), quitter (?action=leave), modifier tracé (?action=updateRoute)
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -59,12 +59,36 @@ export async function PATCH(
     if (action === "close") {
       const { userId } = body;
       const record = await base("sorties").find(id);
-
       if (record.fields["organizerId"] !== userId) {
         return Response.json({ error: "Non autorisé" }, { status: 403 });
       }
-
       await base("sorties").update(id, { status: "closed" });
+      return Response.json({ success: true });
+    }
+
+    // ── Quitter ───────────────────────────────────────────────────────────────
+    if (action === "leave") {
+      const { userId, userEmail } = body;
+      if (!userId) return Response.json({ error: "Non authentifié" }, { status: 401 });
+
+      const record = await base("sorties").find(id);
+      const f = record.fields;
+
+      const rawIds = (f["Participants IDs"] as string) ?? "";
+      const ids = rawIds ? rawIds.split(",").map((s) => s.trim()).filter(Boolean) : [];
+      const newIds = ids.filter((x) => x !== userId);
+      if (newIds.length === ids.length) return Response.json({ error: "Pas inscrit" }, { status: 409 });
+
+      const rawEmails = (f["Participants emails"] as string) ?? "";
+      const emails = rawEmails ? rawEmails.split(",").map((s) => s.trim()).filter(Boolean) : [];
+      const newEmails = emails.filter((x) => x !== userEmail);
+
+      const currentCount = (f["Nb participants"] as number) ?? 0;
+      await base("sorties").update(id, {
+        "Nb participants": Math.max(0, currentCount - 1),
+        "Participants IDs": newIds.join(", "),
+        "Participants emails": newEmails.join(", "),
+      });
       return Response.json({ success: true });
     }
 
@@ -98,8 +122,6 @@ export async function PATCH(
     const emails = rawEmails ? rawEmails.split(",").map((s) => s.trim()) : [];
     emails.push(userEmail);
 
-    // Tentative avec tous les champs, fallback sur Nb participants seul
-    // si les colonnes optionnelles n'existent pas encore dans Airtable.
     try {
       await base("sorties").update(id, {
         "Nb participants": currentCount + 1,
