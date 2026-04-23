@@ -5,6 +5,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { getRoute } from "@/lib/mapbox/routeService";
 import type { TravelMode } from "@/lib/mapbox/directions";
+import type { GPXData } from "@/lib/gpx/parseGPX";
 
 type ExtendedMode = TravelMode | "swimming";
 import {
@@ -26,6 +27,7 @@ type Props = {
   onLocationChange: (coords: Coords, adresse?: string) => void;
   onRouteChange: (points: Point[], storedRoute?: StoredRoute) => void;
   height?: string;
+  initialGpx?: GPXData | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -136,9 +138,10 @@ function initRouteSources(map: mapboxgl.Map) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function RoutePickerMap({ onLocationChange, onRouteChange, height = "320px" }: Props) {
+export default function RoutePickerMap({ onLocationChange, onRouteChange, height = "320px", initialGpx }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
+  const mapLoadedRef = useRef(false);
   const locationMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const routeMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const routePointsRef = useRef<Point[]>([]);
@@ -164,6 +167,54 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { travelModeRef.current = travelMode; }, [travelMode]);
 
+  // ── Charger un GPX importé ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!initialGpx) return;
+
+    function applyGpx() {
+      const map = mapRef.current;
+      if (!map || !initialGpx) return;
+
+      // Nettoyer tracé précédent
+      routeMarkersRef.current.forEach((m) => m.remove());
+      routeMarkersRef.current = [];
+      routePointsRef.current = initialGpx.coordinates;
+      setRoutePoints(initialGpx.coordinates);
+      setRouteInfo({ distanceKm: initialGpx.distanceKm, durationMin: 0, gain: initialGpx.elevationGain });
+      setMode("route");
+
+      // Afficher la ligne GPX
+      updateRouteSource(map, buildPlainGeoJSON(initialGpx.coordinates));
+
+      // Marqueur de départ
+      const [startLng, startLat] = initialGpx.coordinates[0];
+      const el = document.createElement("div");
+      el.className = "w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow";
+      routeMarkersRef.current.push(new mapboxgl.Marker({ element: el }).setLngLat([startLng, startLat]).addTo(map));
+
+      // Auto-zoom
+      map.fitBounds(computeBounds(initialGpx.coordinates), { padding: 60, maxZoom: 15, duration: 800 });
+
+      // Notifier le parent
+      onRouteChange(initialGpx.coordinates, {
+        v: 2,
+        geometry: initialGpx.coordinates,
+        distanceKm: initialGpx.distanceKm,
+        durationMin: 0,
+        gain: initialGpx.elevationGain,
+        loss: 0,
+        slopes: [],
+      });
+    }
+
+    if (mapLoadedRef.current) {
+      applyGpx();
+    } else {
+      mapRef.current?.once("load", applyGpx);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialGpx]);
+
   // ── Map init ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -180,6 +231,7 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
     mapRef.current = map;
 
     map.on("load", () => {
+      mapLoadedRef.current = true;
       // Terrain DEM — required for queryTerrainElevation
       map.addSource("mapbox-dem", {
         type: "raster-dem",

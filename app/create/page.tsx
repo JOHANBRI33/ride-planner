@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
 import type { StoredRoute } from "@/lib/elevation/elevationService";
+import { parseGPX, type GPXData } from "@/lib/gpx/parseGPX";
 
 const RoutePickerMap = _dynamic(() => import("@/components/RoutePickerMap"), { ssr: false });
 
@@ -23,6 +24,25 @@ export default function CreatePage() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [routePoints, setRoutePoints] = useState<[number, number][]>([]);
   const [storedRoute, setStoredRoute] = useState<StoredRoute | null>(null);
+  const [gpxData, setGpxData] = useState<GPXData | null>(null);
+  const [gpxStatus, setGpxStatus] = useState<"idle" | "success" | "error">("idle");
+  const [gpxName, setGpxName] = useState("");
+  const gpxInputRef = useRef<HTMLInputElement>(null);
+
+  function handleGpxFile(file: File) {
+    setGpxStatus("idle");
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const parsed = parseGPX(text);
+      if (!parsed) { setGpxStatus("error"); return; }
+      setGpxData(parsed);
+      setGpxName(parsed.name ?? file.name.replace(".gpx", ""));
+      setGpxStatus("success");
+    };
+    reader.onerror = () => setGpxStatus("error");
+    reader.readAsText(file);
+  }
 
   function handleLocationChange(c: { lat: number; lng: number }, adresse?: string) {
     setCoords(c);
@@ -140,10 +160,47 @@ export default function CreatePage() {
           </Field>
 
           <Field label="Carte · RDV &amp; Parcours">
+            {/* ── Import GPX ── */}
+            <div className="flex flex-col gap-2 mb-2">
+              <input
+                ref={gpxInputRef}
+                type="file"
+                accept=".gpx"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleGpxFile(f); e.target.value = ""; }}
+              />
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => gpxInputRef.current?.click()}
+                  className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-xl border-2 border-dashed border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
+                >
+                  📂 Importer un GPX
+                </button>
+                {gpxStatus === "success" && gpxData && (
+                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-1.5 text-xs text-emerald-700 font-medium">
+                    <span>✅ {gpxName}</span>
+                    <span className="text-emerald-500">·</span>
+                    <span>{gpxData.distanceKm.toFixed(2)} km</span>
+                    {gpxData.elevationGain > 0 && <><span className="text-emerald-500">·</span><span>D+ {gpxData.elevationGain} m</span></>}
+                    <button
+                      type="button"
+                      onClick={() => { setGpxData(null); setGpxStatus("idle"); setGpxName(""); }}
+                      className="ml-1 text-emerald-400 hover:text-emerald-700"
+                    >×</button>
+                  </div>
+                )}
+                {gpxStatus === "error" && (
+                  <p className="text-xs text-red-500 font-medium">❌ Fichier GPX invalide ou sans points de trace.</p>
+                )}
+              </div>
+            </div>
+
             <RoutePickerMap
               onLocationChange={handleLocationChange}
               onRouteChange={(pts, sr) => { setRoutePoints(pts); setStoredRoute(sr ?? null); }}
               height="320px"
+              initialGpx={gpxData}
             />
             {coords && (
               <p className="text-xs text-gray-400">RDV : {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</p>
