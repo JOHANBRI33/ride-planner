@@ -30,6 +30,10 @@ export default function Navbar() {
 
           {user ? (
             <>
+              <Link href="/dashboard" className="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors hidden md:block">
+                📊 Dashboard
+              </Link>
+
               {/* Avatar + Mon profil */}
               <Link href="/profile" className="flex items-center gap-2 group">
                 <div className="relative">

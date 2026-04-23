@@ -122,8 +122,12 @@ async function geocodeLieu(lieu: string): Promise<{ lat: number; lng: number } |
   } catch { return null; }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const includePast = searchParams.get("includePast") === "true";
+    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+
     const base = getBase();
     const records = await base("sorties").select().firstPage();
 
@@ -175,7 +179,11 @@ export async function GET() {
       };
     }));
 
-    return Response.json(data);
+    const filtered = includePast
+      ? data
+      : data.filter((s) => !s.date || (s.date as string) >= today);
+
+    return Response.json(filtered);
   } catch (error) {
     console.error("Airtable GET error:", error);
     return Response.json({ error: "Erreur Airtable" }, { status: 500 });

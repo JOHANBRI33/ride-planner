@@ -5,6 +5,8 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { getRoute } from "@/lib/mapbox/routeService";
 import type { TravelMode } from "@/lib/mapbox/directions";
+
+type ExtendedMode = TravelMode | "swimming";
 import {
   sampleGeometry,
   calculateElevationProfile,
@@ -30,10 +32,10 @@ type Props = {
 
 const DEFAULT_CENTER: [number, number] = [-0.5792, 44.8378];
 
-const TRAVEL_MODES: { value: TravelMode; label: string; emoji: string }[] = [
-  { value: "cycling", label: "Vélo",    emoji: "🚴" },
-  { value: "walking", label: "Marche",  emoji: "🥾" },
-  { value: "driving", label: "Voiture", emoji: "🚗" },
+const TRAVEL_MODES: { value: ExtendedMode; label: string; emoji: string }[] = [
+  { value: "cycling",  label: "Vélo",          emoji: "🚴" },
+  { value: "walking",  label: "Marche ou Run",  emoji: "🥾" },
+  { value: "swimming", label: "Natation",       emoji: "🏊" },
 ];
 
 const LEGEND = [
@@ -44,6 +46,20 @@ const LEGEND = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function haversineKm(a: Point, b: Point): number {
+  const R = 6371;
+  const dLat = (b[1] - a[1]) * Math.PI / 180;
+  const dLng = (b[0] - a[0]) * Math.PI / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * Math.PI / 180) * Math.cos(b[1] * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function straightLineKm(pts: Point[]): number {
+  let d = 0;
+  for (let i = 1; i < pts.length; i++) d += haversineKm(pts[i - 1], pts[i]);
+  return Math.round(d * 100) / 100;
+}
 
 function computeBounds(coords: Point[]): mapboxgl.LngLatBoundsLike {
   const lngs = coords.map((p) => p[0]);
@@ -127,10 +143,10 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
   const routeMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const routePointsRef = useRef<Point[]>([]);
   const modeRef = useRef<"location" | "route">("location");
-  const travelModeRef = useRef<TravelMode>("cycling");
+  const travelModeRef = useRef<ExtendedMode>("cycling");
 
   const [mode, setMode] = useState<"location" | "route">("location");
-  const [travelMode, setTravelMode] = useState<TravelMode>("cycling");
+  const [travelMode, setTravelMode] = useState<ExtendedMode>("cycling");
   const [locating, setLocating] = useState(false);
   const [locationPicked, setLocationPicked] = useState(false);
   const [routePoints, setRoutePoints] = useState<Point[]>([]);
@@ -228,10 +244,23 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
   async function refreshDirections(
     map: mapboxgl.Map,
     points: Point[],
-    forcedMode?: TravelMode,
+    forcedMode?: ExtendedMode,
   ) {
+    const activeMode = forcedMode ?? travelModeRef.current;
+
+    // Natation: straight lines only, no routing API
+    if (activeMode === "swimming") {
+      updateRouteSource(map, buildPlainGeoJSON(points));
+      clearPreviewLine(map);
+      if (points.length >= 2) {
+        map.fitBounds(computeBounds(points), { padding: 60, maxZoom: 15, duration: 800 });
+      }
+      onRouteChange(points, { v: 2, geometry: points, distanceKm: straightLineKm(points), durationMin: 0 });
+      return;
+    }
+
     setLoadingRoute(true);
-    const result = await getRoute(points, forcedMode ?? travelModeRef.current);
+    const result = await getRoute(points, activeMode as TravelMode);
     setLoadingRoute(false);
 
     if (!result) {
@@ -318,7 +347,7 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
     await addRoutePoint(map, points[0]);
   }
 
-  async function changeTravelMode(newMode: TravelMode) {
+  async function changeTravelMode(newMode: ExtendedMode) {
     setTravelMode(newMode);
     const map = mapRef.current;
     const points = routePointsRef.current;
@@ -432,7 +461,9 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
 
           {/* Left: loading / stats */}
           <div className="flex items-center gap-3 flex-wrap">
-            {isLoading ? (
+            {travelMode === "swimming" && routePoints.length === 0 ? (
+              <span className="text-xs text-blue-500">🏊 1er point = départ (sur terre) · suivants = dans l&apos;eau · tracé en ligne droite</span>
+            ) : isLoading ? (
               <span className="flex items-center gap-1.5 text-xs text-slate-500">
                 <span className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin inline-block" />
                 {loadingRoute ? "Calcul de l'itinéraire…" : "Calcul du dénivelé…"}
@@ -442,7 +473,7 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
             ) : routeInfo ? (
               <>
                 <Stat icon="📏" value={`${routeInfo.distanceKm.toFixed(2)} km`} />
-                <Stat icon="⏱️" value={`~${routeInfo.durationMin} min`} />
+                {routeInfo.durationMin > 0 && <Stat icon="⏱️" value={`~${routeInfo.durationMin} min`} />}
                 {routeInfo.gain != null && routeInfo.gain > 0 && (
                   <Stat icon="⬆️" value={`${routeInfo.gain} m`} title="Dénivelé positif" />
                 )}
