@@ -11,16 +11,16 @@ import { useDropzone } from "react-dropzone";
 // URLs pointent vers des images de personnages connus (remplaçables par /avatars/xxx.png)
 
 export const AVATARS = [
-  { key: "yoda",        name: "Yoda",         emoji: "🟢", url: "https://upload.wikimedia.org/wikipedia/en/thumb/9/9b/Yoda_Empire_Strikes_Back.png/200px-Yoda_Empire_Strikes_Back.png" },
-  { key: "superman",    name: "Superman",     emoji: "🔵", url: "https://upload.wikimedia.org/wikipedia/en/thumb/e/ea/Superman_crop.jpg/200px-Superman_crop.jpg" },
-  { key: "catwoman",    name: "Catwoman",     emoji: "⚫", url: "https://upload.wikimedia.org/wikipedia/en/thumb/7/7a/Catwoman_portrait.jpg/200px-Catwoman_portrait.jpg" },
-  { key: "wonderwoman", name: "Wonder Woman", emoji: "🔴", url: "https://upload.wikimedia.org/wikipedia/en/thumb/9/93/Wonder_Woman.jpg/200px-Wonder_Woman.jpg" },
-  { key: "zeus",        name: "Zeus",         emoji: "⚡", url: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Zeus_Otricoli_Pio-Clementino_Inv257.jpg/200px-Zeus_Otricoli_Pio-Clementino_Inv257.jpg" },
-  { key: "gandalf",     name: "Gandalf",      emoji: "🧙", url: "https://upload.wikimedia.org/wikipedia/en/thumb/e/e9/Gandalf600ppx.jpg/200px-Gandalf600ppx.jpg" },
-  { key: "blackpanther",name: "Black Panther",emoji: "🐾", url: "https://upload.wikimedia.org/wikipedia/en/thumb/1/10/Black_Panther_character_film_poster.jpg/200px-Black_Panther_character_film_poster.jpg" },
-  { key: "hermione",    name: "Hermione",     emoji: "📚", url: "https://upload.wikimedia.org/wikipedia/en/thumb/d/d3/Hermione_Granger_poster.jpg/200px-Hermione_Granger_poster.jpg" },
-  { key: "ironman",     name: "Iron Man",     emoji: "🤖", url: "https://upload.wikimedia.org/wikipedia/en/thumb/4/47/Iron_Man_%28circa_2018%29.png/200px-Iron_Man_%28circa_2018%29.png" },
-  { key: "laracroft",   name: "Lara Croft",   emoji: "🏹", url: "https://upload.wikimedia.org/wikipedia/en/thumb/2/2c/Lara_Croft_Tomb_Raider.jpg/200px-Lara_Croft_Tomb_Raider.jpg" },
+  { key: "marchand",    name: "Léon Marchand",        emoji: "🏊", url: "https://api.dicebear.com/9.x/bottts/svg?seed=leonmarchand" },
+  { key: "beaugrand",   name: "C. Beaugrand",         emoji: "🏅", url: "https://api.dicebear.com/9.x/bottts/svg?seed=cassandrebeaugrand" },
+  { key: "gressier",    name: "Jimmy Gressier",        emoji: "🏃", url: "https://api.dicebear.com/9.x/bottts/svg?seed=jimmygressier" },
+  { key: "alaphilippe", name: "J. Alaphilippe",        emoji: "🚴", url: "https://api.dicebear.com/9.x/bottts/svg?seed=julianalaphilippe" },
+  { key: "pinot",       name: "Thibaut Pinot",         emoji: "🚵", url: "https://api.dicebear.com/9.x/bottts/svg?seed=thibautpinot" },
+  { key: "manaudou",    name: "F. Manaudou",           emoji: "🌊", url: "https://api.dicebear.com/9.x/bottts/svg?seed=florentmanaudou" },
+  { key: "luis",        name: "Vincent Luis",          emoji: "⚡", url: "https://api.dicebear.com/9.x/bottts/svg?seed=vincentluis" },
+  { key: "dhaene",      name: "François D'Haene",      emoji: "🏔️", url: "https://api.dicebear.com/9.x/bottts/svg?seed=francoisdhaene" },
+  { key: "bonnet",      name: "Charlotte Bonnet",      emoji: "💧", url: "https://api.dicebear.com/9.x/bottts/svg?seed=charlottebonnet" },
+  { key: "thevenard",   name: "X. Thevenard",          emoji: "🥾", url: "https://api.dicebear.com/9.x/bottts/svg?seed=xavierthevenard" },
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
