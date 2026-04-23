@@ -6,6 +6,29 @@ function getBase() {
   );
 }
 
+// Réduit un tableau de coordonnées à maxPts points max (échantillonnage linéaire)
+function downsample(pts: [number, number][], maxPts = 300): [number, number][] {
+  if (pts.length <= maxPts) return pts;
+  const step = (pts.length - 1) / (maxPts - 1);
+  return Array.from({ length: maxPts }, (_, i) => pts[Math.round(i * step)]);
+}
+
+// Nettoie le JSON route avant Airtable :
+// - supprime slopes (trop volumineux)
+// - sous-échantillonne geometry à 300 pts max
+function sanitizeRoute(raw: string): string {
+  try {
+    const r = JSON.parse(raw);
+    if (r && typeof r === "object" && r.v === 2) {
+      const clean = { v: 2, geometry: downsample(r.geometry ?? []), distanceKm: r.distanceKm, durationMin: r.durationMin, gain: r.gain, loss: r.loss };
+      return JSON.stringify(clean);
+    }
+    // v1 plain array
+    if (Array.isArray(r)) return JSON.stringify(downsample(r));
+    return raw;
+  } catch { return raw; }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -15,7 +38,6 @@ export async function POST(request: Request) {
     }
 
     const base = getBase();
-    // Champs garantis présents dans la table Airtable
     const coreFields: Record<string, unknown> = {
       Titre: body.titre,
       Date: body.date,
@@ -26,20 +48,23 @@ export async function POST(request: Request) {
       "Participants max": Number(body.participantsMax),
     };
 
-    // Champs optionnels — présents seulement si les colonnes existent dans Airtable.
-    // Ajoute ces colonnes manuellement : Latitude (Number), Longitude (Number),
-    // organizerId (Text), organizerEmail (Text), status (Text).
     const optionalFields: Record<string, unknown> = {};
-    if (body.latitude != null)  optionalFields["Latitude"]       = body.latitude;
-    if (body.longitude != null) optionalFields["Longitude"]      = body.longitude;
-    if (body.organizerId)       optionalFields["organizerId"]    = body.organizerId;
-    if (body.organizerEmail)    optionalFields["organizerEmail"] = body.organizerEmail;
-    if (body.organizerId)       optionalFields["status"]         = "open";
-    if (body.route)             optionalFields["route"]          = body.route;
-    if (body.image_url)         optionalFields["image_url"]      = body.image_url;
-    if (body.distanceKm != null)  optionalFields["distanceKm"]     = Number(body.distanceKm);
+    if (body.latitude != null)     optionalFields["Latitude"]       = body.latitude;
+    if (body.longitude != null)    optionalFields["Longitude"]      = body.longitude;
+    if (body.organizerId)          optionalFields["organizerId"]    = body.organizerId;
+    if (body.organizerEmail)       optionalFields["organizerEmail"] = body.organizerEmail;
+    if (body.organizerId)          optionalFields["status"]         = "open";
+    if (body.image_url)            optionalFields["image_url"]      = body.image_url;
+    if (body.distanceKm != null)   optionalFields["distanceKm"]     = Number(body.distanceKm);
     if (body.elevationGain != null) optionalFields["elevationGain"] = Number(body.elevationGain);
-    if (body.route_geometry)      optionalFields["route_geometry"] = body.route_geometry;
+    // Nettoyage avant Airtable : supprime slopes, sous-échantillonne geometry
+    if (body.route)          optionalFields["route"]          = sanitizeRoute(body.route);
+    if (body.route_geometry) {
+      try {
+        const geo = JSON.parse(body.route_geometry) as [number, number][];
+        optionalFields["route_geometry"] = JSON.stringify(downsample(geo));
+      } catch { optionalFields["route_geometry"] = body.route_geometry; }
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async function createRecord(fields: Record<string, any>) {
