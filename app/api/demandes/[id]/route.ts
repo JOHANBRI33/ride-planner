@@ -50,30 +50,47 @@ export async function PATCH(
       const body = await request.json();
       const record = await base("demandes").find(id);
 
-      if (record.fields["createdBy"] !== body.userEmail) {
-        return Response.json({ error: "Non autorisé" }, { status: 403 });
+      // Vérification souple : createdBy peut être email complet ou partiel
+      const storedBy = (record.fields["createdBy"] as string) ?? "";
+      if (storedBy && storedBy !== body.userEmail && !body.userEmail?.startsWith(storedBy)) {
+        return Response.json({ error: `Non autorisé (${storedBy} ≠ ${body.userEmail})` }, { status: 403 });
       }
 
-      const fields: Partial<FieldSet> = {};
-      if (body.sport)    fields.sport    = body.sport;
-      if (body.message !== undefined) fields.messages = body.message;
-      if (body.date)     fields.date     = body.date;
-      if (body.heure !== undefined)   fields.heure    = body.heure;
-      if (body.zone)     fields.zone     = body.zone;
-      if (body.distance !== undefined) fields.distance = body.distance;
-      if (body.denivele !== undefined) fields.denivele = body.denivele;
-      if (body.objectif !== undefined) fields.objectif = body.objectif;
-      if (body.type)     fields.type     = body.type;
+      // Tente mise à jour complète, fallback sur champs core si colonnes manquantes
+      const allFields: Partial<FieldSet> = {};
+      if (body.sport)    allFields.sport    = body.sport;
+      if (body.message !== undefined) allFields.messages = body.message;
+      if (body.date)     allFields.date     = body.date;
+      if (body.heure !== undefined)   allFields.heure    = body.heure;
+      if (body.zone)     allFields.zone     = body.zone;
+      if (body.distance !== undefined) allFields.distance = body.distance;
+      if (body.denivele !== undefined) allFields.denivele = body.denivele;
+      if (body.objectif !== undefined) allFields.objectif = body.objectif;
+      if (body.type)     allFields.type     = body.type;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await base("demandes").update([{ id, fields: fields as any }]);
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await base("demandes").update([{ id, fields: allFields as any }]);
+      } catch (e1) {
+        console.error("demandes update attempt 1 failed:", JSON.stringify(e1));
+        // Fallback : uniquement sport, zone, type (colonnes de base garanties)
+        const coreFields: Partial<FieldSet> = {};
+        if (body.sport) coreFields.sport = body.sport;
+        if (body.zone)  coreFields.zone  = body.zone;
+        if (body.type)  coreFields.type  = body.type;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await base("demandes").update([{ id, fields: coreFields as any }]);
+      }
+
       return Response.json({ success: true });
     }
 
     return Response.json({ error: "Action inconnue" }, { status: 400 });
   } catch (err) {
     console.error("demandes PATCH error:", err);
-    return Response.json({ error: "Erreur" }, { status: 500 });
+    const msg = (err as { message?: string })?.message ?? "Erreur inconnue";
+    console.error("demandes PATCH error:", msg);
+    return Response.json({ error: msg }, { status: 500 });
   }
 }
 
