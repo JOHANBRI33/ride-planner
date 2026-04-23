@@ -84,11 +84,18 @@ export async function PATCH(
       const newEmails = emails.filter((x) => x !== userEmail);
 
       const currentCount = (f["Nb participants"] as number) ?? 0;
-      await base("sorties").update(id, {
-        "Nb participants": Math.max(0, currentCount - 1),
-        "Participants IDs": newIds.join(", "),
-        "Participants emails": newEmails.join(", "),
-      });
+      try {
+        await base("sorties").update(id, {
+          "Nb participants": Math.max(0, currentCount - 1),
+          "Participants IDs": newIds.join(", "),
+          "Participants emails": newEmails.join(", "),
+        });
+      } catch {
+        await base("sorties").update(id, {
+          "Participants IDs": newIds.join(", "),
+          "Participants emails": newEmails.join(", "),
+        });
+      }
       return Response.json({ success: true });
     }
 
@@ -122,16 +129,39 @@ export async function PATCH(
     const emails = rawEmails ? rawEmails.split(",").map((s) => s.trim()) : [];
     emails.push(userEmail);
 
+    // Essaie chaque combinaison jusqu'à ce qu'une réussisse
+    let joinOk = false;
     try {
       await base("sorties").update(id, {
         "Nb participants": currentCount + 1,
         "Participants IDs": ids.join(", "),
         "Participants emails": emails.join(", "),
       });
-    } catch {
-      await base("sorties").update(id, {
-        "Nb participants": currentCount + 1,
-      });
+      joinOk = true;
+    } catch (e1) {
+      console.error("join attempt 1 failed:", JSON.stringify(e1));
+    }
+    if (!joinOk) {
+      try {
+        await base("sorties").update(id, {
+          "Participants IDs": ids.join(", "),
+          "Participants emails": emails.join(", "),
+        });
+        joinOk = true;
+      } catch (e2) {
+        console.error("join attempt 2 failed:", JSON.stringify(e2));
+      }
+    }
+    if (!joinOk) {
+      try {
+        await base("sorties").update(id, { "Nb participants": currentCount + 1 });
+        joinOk = true;
+      } catch (e3) {
+        console.error("join attempt 3 failed:", JSON.stringify(e3));
+      }
+    }
+    if (!joinOk) {
+      return Response.json({ error: "Impossible de mettre à jour Airtable" }, { status: 500 });
     }
 
     return Response.json({ success: true });
