@@ -6,6 +6,23 @@ function getBase() {
   );
 }
 
+function downsample(pts: [number, number][], maxPts = 300): [number, number][] {
+  if (!Array.isArray(pts) || pts.length <= maxPts) return pts;
+  const step = (pts.length - 1) / (maxPts - 1);
+  return Array.from({ length: maxPts }, (_, i) => pts[Math.round(i * step)]);
+}
+
+function sanitizeRoute(raw: string): string {
+  try {
+    const r = JSON.parse(raw);
+    if (r && typeof r === "object" && r.v === 2) {
+      return JSON.stringify({ v: 2, geometry: downsample(r.geometry ?? []), distanceKm: r.distanceKm, durationMin: r.durationMin, gain: r.gain, loss: r.loss });
+    }
+    if (Array.isArray(r)) return JSON.stringify(downsample(r));
+    return raw;
+  } catch { return raw; }
+}
+
 // PATCH : rejoindre (?action=join, défaut) ou clôturer (?action=close)
 export async function PATCH(
   request: Request,
@@ -17,6 +34,26 @@ export async function PATCH(
     const action = searchParams.get("action") ?? "join";
     const body = await request.json();
     const base = getBase();
+
+    // ── Mettre à jour le tracé ────────────────────────────────────────────────
+    if (action === "updateRoute") {
+      const { userId, route, route_geometry, distanceKm, elevationGain } = body;
+      const record = await base("sorties").find(id);
+      const ADMIN = "bridey.johan@neuf.fr";
+      const orgId = record.fields["organizerId"] as string | undefined;
+      const orgEmail = record.fields["organizerEmail"] as string | undefined;
+      if (userId !== orgId && orgEmail !== ADMIN) {
+        return Response.json({ error: "Non autorisé" }, { status: 403 });
+      }
+      const fields: Record<string, unknown> = {};
+      if (route)          fields["route"]          = sanitizeRoute(route);
+      if (route_geometry) fields["route_geometry"]  = JSON.stringify(downsample(JSON.parse(route_geometry)));
+      if (distanceKm != null)   fields["distanceKm"]     = Number(distanceKm);
+      if (elevationGain != null) fields["elevationGain"] = Number(elevationGain);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await base("sorties").update(id, fields as any);
+      return Response.json({ success: true });
+    }
 
     // ── Clôturer ──────────────────────────────────────────────────────────────
     if (action === "close") {

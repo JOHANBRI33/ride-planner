@@ -10,6 +10,7 @@ import { parseRoute } from "@/lib/mapbox/parseRoute";
 import { getDifficulty } from "@/lib/elevation/elevationService";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
+const RoutePickerMap = dynamic(() => import("@/components/RoutePickerMap"), { ssr: false });
 
 type Sortie = {
   id: string;
@@ -77,6 +78,10 @@ export default function SortiePage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [msgInput, setMsgInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [editingRoute, setEditingRoute] = useState(false);
+  const [newRoutePoints, setNewRoutePoints] = useState<[number,number][]>([]);
+  const [newStoredRoute, setNewStoredRoute] = useState<import("@/lib/elevation/elevationService").StoredRoute | null>(null);
+  const [savingRoute, setSavingRoute] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true); // ne scroll que si l'utilisateur est déjà en bas du chat
@@ -153,6 +158,29 @@ export default function SortiePage() {
       body: JSON.stringify({ userId: user.id, userEmail: user.email }),
     });
     router.push("/");
+  }
+
+  async function saveRoute() {
+    if (!newStoredRoute && newRoutePoints.length < 2) return;
+    setSavingRoute(true);
+    const route = newStoredRoute ?? { v: 2 as const, geometry: newRoutePoints, distanceKm: 0, durationMin: 0 };
+    await fetch(`/api/sorties/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "updateRoute",
+        userId: user?.id,
+        route: JSON.stringify(route),
+        route_geometry: JSON.stringify(route.geometry),
+        distanceKm: route.distanceKm ?? null,
+        elevationGain: route.gain ?? null,
+      }),
+    });
+    const data: Sortie[] = await fetch("/api/sorties").then(r => r.json());
+    const updated = data.find(s => s.id === id);
+    if (updated) setSortie(updated);
+    setSavingRoute(false);
+    setEditingRoute(false);
   }
 
   async function sendMessage(e: React.FormEvent) {
@@ -479,6 +507,37 @@ export default function SortiePage() {
                   : isFull ? "Complet"
                   : "Rejoindre cette sortie"}
               </button>
+            )}
+
+            {/* Modifier le tracé (organisateur) */}
+            {isOrganizer && (
+              <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                <button
+                  onClick={() => setEditingRoute(v => !v)}
+                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <span>🗺️ {editingRoute ? "Annuler la modification du tracé" : "Modifier / ajouter le tracé"}</span>
+                  <span className="text-slate-400">{editingRoute ? "✕" : "+"}</span>
+                </button>
+                {editingRoute && (
+                  <div className="border-t border-slate-100">
+                    <RoutePickerMap
+                      onLocationChange={() => {}}
+                      onRouteChange={(pts, sr) => { setNewRoutePoints(pts); setNewStoredRoute(sr ?? null); }}
+                      height="320px"
+                    />
+                    <div className="p-3 flex gap-2">
+                      <button
+                        onClick={saveRoute}
+                        disabled={savingRoute || (newRoutePoints.length < 2 && !newStoredRoute)}
+                        className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold text-sm transition-colors"
+                      >
+                        {savingRoute ? "Enregistrement…" : "💾 Enregistrer le tracé"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Actions organisateur / admin */}
