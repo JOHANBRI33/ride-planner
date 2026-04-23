@@ -158,7 +158,7 @@ export async function GET(request: Request) {
         niveau: f["Niveau requis"],
         lieu: f["Lieu précis"],
         participantsMax: f["Participants max"],
-        nbParticipants: f["Nb participants"],
+        nbParticipants: (f["Nb participants"] as number) || (f["Participants emails"] ? (f["Participants emails"] as string).split(",").filter(Boolean).length : 0),
         latitude: lat,
         longitude: lng,
         image: (f["Carte"] as { url: string }[] | undefined)?.[0]?.url || null,
@@ -167,7 +167,7 @@ export async function GET(request: Request) {
           ? (f["Participants IDs"] as string).split(",").map((s) => s.trim())
           : [],
         participantEmails: f["Participants emails"]
-          ? (f["Participants emails"] as string).split(",").map((s) => s.trim())
+          ? (f["Participants emails"] as string).split(",").map((s) => s.trim()).filter(Boolean)
           : [],
         organizerId: f["organizerId"] ?? null,
         organizerEmail: f["organizerEmail"] ?? null,
