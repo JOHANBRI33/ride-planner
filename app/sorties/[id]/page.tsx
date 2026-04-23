@@ -74,6 +74,7 @@ export default function SortiePage() {
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [joinSuccess, setJoinSuccess] = useState(false);
+  const [joinError, setJoinError] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [closing, setClosing] = useState(false);
 
@@ -126,15 +127,46 @@ export default function SortiePage() {
   async function rejoindre() {
     if (!user) { router.push(`/login?redirect=/sorties/${id}`); return; }
     setJoining(true);
+    setJoinError("");
+
+    // Mise à jour optimiste immédiate
+    setSortie((prev) => {
+      if (!prev) return prev;
+      const emails = prev.participantEmails ?? [];
+      if (emails.includes(user.email)) return prev;
+      return {
+        ...prev,
+        nbParticipants: (prev.nbParticipants ?? 0) + 1,
+        participantIds: [...(prev.participantIds ?? []), user.id],
+        participantEmails: [...emails, user.email],
+      };
+    });
+
     const res = await fetch(`/api/sorties/${id}?action=join`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: user.id, userEmail: user.email }),
     });
+
     if (res.ok) {
       setJoinSuccess(true);
       setTimeout(() => setJoinSuccess(false), 4000);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      setJoinError(err.error ?? "Erreur lors de l'inscription");
+      // Annuler l'optimisme
+      setSortie((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          nbParticipants: Math.max(0, (prev.nbParticipants ?? 1) - 1),
+          participantIds: (prev.participantIds ?? []).filter((x) => x !== user.id),
+          participantEmails: (prev.participantEmails ?? []).filter((x) => x !== user.email),
+        };
+      });
     }
+
+    // Resync depuis Airtable pour confirmer
     const data: Sortie[] = await fetch("/api/sorties?includePast=true").then((r) => r.json());
     const updated = data.find((s) => s.id === id);
     if (updated) setSortie(updated);
@@ -518,6 +550,13 @@ export default function SortiePage() {
                 </div>
               )}
             </div>
+
+            {/* Toast erreur inscription */}
+            {joinError && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-2xl px-4 py-3 text-sm text-red-700 font-medium">
+                <span>❌</span><span>{joinError}</span>
+              </div>
+            )}
 
             {/* Toast succès inscription */}
             {joinSuccess && (
