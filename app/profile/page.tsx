@@ -50,13 +50,31 @@ function displayVal(field: string, val: string): string {
   return DISPLAY_VALUES[field]?.[val] ?? val;
 }
 
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 300;
+        const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+        const canvas = document.createElement("canvas");
+        canvas.width  = Math.round(img.width  * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function PhotoDropzone({ onPhoto }: { onPhoto: (dataUrl: string) => void }) {
   const onDrop = useCallback((files: File[]) => {
     const file = files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => onPhoto(e.target?.result as string);
-    reader.readAsDataURL(file);
+    compressImage(file).then(onPhoto);
   }, [onPhoto]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -91,34 +109,65 @@ export default function ProfilePage() {
   const [avatarTab, setAvatarTab] = useState<"avatar" | "photo">("avatar");
 
   const isAdmin = user?.email === ADMIN_EMAIL;
-  const canEdit = !!user && (!!profile?.airtableId) && (user.email === profile?.email || isAdmin);
+  // Tout utilisateur connecté peut éditer son propre profil (même si pas encore en Airtable)
+  const canEdit = !!user;
 
   useEffect(() => {
     if (!user) { router.push("/login"); return; }
   }, [user, router]);
 
   useEffect(() => {
-    if (profile) {
+    // Priorité : données Airtable, sinon localStorage
+    const source = profile ?? (() => {
+      try {
+        const raw = localStorage.getItem("userPreferences");
+        if (!raw) return null;
+        const p = JSON.parse(raw);
+        if (p.skipped || p.synced) return null;
+        return {
+          sexe: p.sexe ?? "",
+          ageRange: p.ageRange ?? "",
+          sports: Array.isArray(p.sports) ? p.sports.join(",") : (p.sports ?? ""),
+          goal: p.global?.goal ?? "",
+          description: p.description ?? "",
+          avatarKey: p.avatarKey ?? "",
+          photoUrl: p.photoUrl ?? "",
+          cycling_level: p.cycling?.level ?? "",
+          cycling_bikeType: p.cycling?.bikeType ?? "",
+          cycling_mechanicalSkill: p.cycling?.mechanicalSkill ?? "",
+          running_pace: p.running?.pace ?? "",
+          running_terrain: p.running?.terrain ?? "",
+          running_distance: p.running?.distance ?? "",
+          hiking_duration: p.hiking?.duration ?? "",
+          hiking_elevationGain: p.hiking?.elevationGain ?? "",
+          hiking_groupPref: p.hiking?.groupPref ?? "",
+          swimming_level: p.swimming?.level ?? "",
+          swimming_distance: p.swimming?.distance ?? "",
+        };
+      } catch { return null; }
+    })();
+
+    if (source) {
       setForm({
-        sexe: profile.sexe ?? "",
-        ageRange: profile.ageRange ?? "",
-        sports: profile.sports ?? "",
-        goal: profile.goal ?? "",
-        description: profile.description ?? "",
-        cycling_level: profile.cycling_level ?? "",
-        cycling_bikeType: profile.cycling_bikeType ?? "",
-        cycling_mechanicalSkill: profile.cycling_mechanicalSkill ?? "",
-        running_pace: profile.running_pace ?? "",
-        running_terrain: profile.running_terrain ?? "",
-        running_distance: profile.running_distance ?? "",
-        hiking_duration: profile.hiking_duration ?? "",
-        hiking_elevationGain: profile.hiking_elevationGain ?? "",
-        hiking_groupPref: profile.hiking_groupPref ?? "",
-        swimming_level: profile.swimming_level ?? "",
-        swimming_distance: profile.swimming_distance ?? "",
+        sexe: (source.sexe as string) ?? "",
+        ageRange: (source.ageRange as string) ?? "",
+        sports: (source.sports as string) ?? "",
+        goal: (source.goal as string) ?? "",
+        description: (source.description as string) ?? "",
+        cycling_level: (source.cycling_level as string) ?? "",
+        cycling_bikeType: (source.cycling_bikeType as string) ?? "",
+        cycling_mechanicalSkill: (source.cycling_mechanicalSkill as string) ?? "",
+        running_pace: (source.running_pace as string) ?? "",
+        running_terrain: (source.running_terrain as string) ?? "",
+        running_distance: (source.running_distance as string) ?? "",
+        hiking_duration: (source.hiking_duration as string) ?? "",
+        hiking_elevationGain: (source.hiking_elevationGain as string) ?? "",
+        hiking_groupPref: (source.hiking_groupPref as string) ?? "",
+        swimming_level: (source.swimming_level as string) ?? "",
+        swimming_distance: (source.swimming_distance as string) ?? "",
       });
-      setEditAvatar(profile.avatarKey ?? "");
-      setEditPhoto(profile.photoUrl ?? "");
+      setEditAvatar((source.avatarKey as string) ?? "");
+      setEditPhoto((source.photoUrl as string) ?? "");
     }
   }, [profile]);
 
@@ -126,17 +175,18 @@ export default function ProfilePage() {
   const currentPreview = profile?.photoUrl || (profile?.avatarKey ? AVATARS.find(a => a.key === profile.avatarKey)?.url : null);
 
   async function handleSave() {
-    if (!profile?.airtableId || !user) return;
+    if (!user) return;
     setSaving(true);
+    // POST fait un upsert par email — fonctionne avec ou sans record existant
     await fetch("/api/users", {
-      method: "PATCH",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        airtableId: profile.airtableId,
-        requestingEmail: user.email,
+        email: user.email,
         ...form,
         avatarKey: editAvatar,
         photoUrl: editPhoto,
+        onboardingDone: "true",
       }),
     });
     await refreshProfile();
@@ -146,13 +196,15 @@ export default function ProfilePage() {
 
   if (!user) return null;
 
+  // Affiche les champs depuis Airtable OU depuis le formulaire pré-rempli
+  const displaySource = profile ?? form;
   const profileFields = [
     "sexe", "ageRange", "sports", "goal", "description",
     "cycling_level", "cycling_bikeType", "cycling_mechanicalSkill",
     "running_pace", "running_terrain", "running_distance",
     "hiking_duration", "hiking_elevationGain", "hiking_groupPref",
     "swimming_level", "swimming_distance",
-  ].filter(f => profile?.[f]);
+  ].filter(f => (displaySource as Record<string, unknown>)?.[f]);
 
   return (
     <main className="min-h-screen bg-slate-50 py-10 px-4">
@@ -214,7 +266,7 @@ export default function ProfilePage() {
               <>
                 {profileFields.length === 0 && (
                   <p className="text-slate-400 text-sm text-center py-4">
-                    Aucune information de profil enregistrée.
+                    Clique sur &quot;Modifier mon profil&quot; pour compléter tes informations.
                   </p>
                 )}
                 {profileFields.map((field) => (
@@ -224,8 +276,8 @@ export default function ProfilePage() {
                     </span>
                     <span className="text-sm font-medium text-slate-800 text-right">
                       {field === "sports"
-                        ? (profile?.[field] as string ?? "").split(",").join(", ")
-                        : displayVal(field, profile?.[field] as string ?? "")}
+                        ? String((displaySource as Record<string, unknown>)?.[field] ?? "").split(",").filter(Boolean).join(", ")
+                        : displayVal(field, String((displaySource as Record<string, unknown>)?.[field] ?? ""))}
                     </span>
                   </div>
                 ))}

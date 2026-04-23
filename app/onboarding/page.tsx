@@ -348,13 +348,31 @@ const SPORT_COLOR: Record<SportKey, string> = {
 
 // ─── Dropzone sub-component ───────────────────────────────────────────────────
 
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 300;
+        const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+        const canvas = document.createElement("canvas");
+        canvas.width  = Math.round(img.width  * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function PhotoDropzone({ onPhoto }: { onPhoto: (dataUrl: string) => void }) {
   const onDrop = useCallback((files: File[]) => {
     const file = files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => onPhoto(e.target?.result as string);
-    reader.readAsDataURL(file);
+    compressImage(file).then(onPhoto);
   }, [onPhoto]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
