@@ -78,6 +78,8 @@ export default function SortiePage() {
   const [msgInput, setMsgInput] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true); // ne scroll que si l'utilisateur est déjà en bas du chat
 
   useEffect(() => {
     fetch("/api/sorties")
@@ -97,8 +99,17 @@ export default function SortiePage() {
   }, [id]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Scroll uniquement dans le conteneur chat, et seulement si déjà en bas
+    const el = chatContainerRef.current;
+    if (!el || !isAtBottomRef.current) return;
+    el.scrollTop = el.scrollHeight;
   }, [messages]);
+
+  function handleChatScroll() {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  }
 
   async function fetchMessages() {
     const res = await fetch(`/api/messages?sortieId=${id}`);
@@ -306,7 +317,7 @@ export default function SortiePage() {
           {/* Contenu */}
           <div className="p-6 flex flex-col gap-6">
 
-            {/* Infos en grille */}
+            {/* Infos en grille — toujours visible */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <InfoCard icon="📅" label="Date" value={sortie.date} />
               <InfoCard icon="🕐" label="Heure" value={sortie.heure} />
@@ -318,6 +329,30 @@ export default function SortiePage() {
                 valueClass={NIVEAU_STYLE[sortie.niveau] ?? "text-slate-700"}
               />
             </div>
+
+            {/* Stats parcours — affichées dès qu'elles sont disponibles */}
+            {(routeDistance != null || routeGain != null || difficulty) && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {routeDistance != null && (
+                  <InfoCard icon="📏" label="Distance" value={`${routeDistance.toFixed(1)} km`} />
+                )}
+                {routeGain != null && routeGain > 0 && (
+                  <InfoCard icon="⬆️" label="Dénivelé +" value={`${routeGain} m`} valueClass="text-emerald-700" />
+                )}
+                {routeLoss != null && routeLoss > 0 && (
+                  <InfoCard icon="⬇️" label="Dénivelé −" value={`${routeLoss} m`} valueClass="text-red-600" />
+                )}
+                {difficulty && (
+                  <div className={`rounded-2xl px-4 py-3 flex flex-col gap-1 border ${difficulty.bg}`}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base">🎯</span>
+                      <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Difficulté</p>
+                    </div>
+                    <p className={`text-sm font-bold ${difficulty.color}`}>{difficulty.label}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Lieu pleine largeur */}
             <div className="flex items-start gap-3 bg-slate-50 rounded-2xl px-4 py-3">
@@ -492,7 +527,11 @@ export default function SortiePage() {
           </div>
 
           {/* Messages */}
-          <div className="px-5 py-5 flex flex-col gap-4 min-h-[220px] max-h-[440px] overflow-y-auto">
+          <div
+            ref={chatContainerRef}
+            onScroll={handleChatScroll}
+            className="px-5 py-5 flex flex-col gap-4 min-h-[220px] max-h-[440px] overflow-y-auto"
+          >
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full gap-2 py-8">
                 <span className="text-3xl">💬</span>
