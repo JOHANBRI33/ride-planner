@@ -121,6 +121,7 @@ function EditForm({ d, onSaved, onClose }: { d: Demande; onSaved: (updated: Dema
   const [objectif, setObjectif] = useState(d.objectif ?? "");
   const [type, setType]         = useState<"cherche" | "propose">(d.type);
   const [saving, setSaving]     = useState(false);
+  const [saved, setSaved]       = useState(false);
   const [error, setError]       = useState("");
 
   async function handleSave() {
@@ -134,7 +135,10 @@ function EditForm({ d, onSaved, onClose }: { d: Demande; onSaved: (updated: Dema
     });
     setSaving(false);
     if (res.ok) {
-      onSaved({ ...d, sport, message, zone, date, heure, distance, denivele, objectif, type });
+      setSaved(true);
+      const updated = { ...d, sport, message, zone, date, heure, distance, denivele, objectif, type };
+      onSaved(updated);
+      setTimeout(() => { setSaved(false); onClose(); }, 1500);
     } else {
       const data = await res.json().catch(() => ({}));
       setError(data.error ?? "Erreur");
@@ -175,12 +179,18 @@ function EditForm({ d, onSaved, onClose }: { d: Demande; onSaved: (updated: Dema
 
       {error && <p className="text-xs text-red-500">{error}</p>}
 
-      <div className="flex gap-2 mt-1">
-        <button onClick={onClose} type="button" className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50">Annuler</button>
-        <button onClick={handleSave} disabled={saving} type="button" className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
-          {saving ? "Sauvegarde…" : "Sauvegarder"}
-        </button>
-      </div>
+      {saved ? (
+        <div className="flex items-center justify-center gap-2 py-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+          <span className="text-emerald-600 font-bold text-sm">✅ Modifications enregistrées !</span>
+        </div>
+      ) : (
+        <div className="flex gap-2 mt-1">
+          <button onClick={onClose} type="button" className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50">Annuler</button>
+          <button onClick={handleSave} disabled={saving} type="button" className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
+            {saving ? "Sauvegarde…" : "Sauvegarder"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -370,6 +380,9 @@ function PostItCard({
   const router = useRouter();
   const [d, setD] = useState(initialD);
   const [loading, setLoading] = useState(false);
+
+  // Resync si le parent met à jour la demande (ex: après édition)
+  useEffect(() => { setD(initialD); }, [initialD]);
 
   const isInterested = !!user && d.interestedUsers.includes(user.email);
   const isCreator    = !!user && user.email === d.createdBy;
