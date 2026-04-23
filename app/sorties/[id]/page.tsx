@@ -419,7 +419,7 @@ export default function SortiePage() {
                   {sortie.nbParticipants ?? 0} / {sortie.participantsMax}
                 </span>
               </div>
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ${
                     isClosed || isFull ? "bg-red-400" : pct > 70 ? "bg-orange-400" : "bg-emerald-400"
@@ -428,21 +428,32 @@ export default function SortiePage() {
                 />
               </div>
 
-              {/* Avatars participants */}
-              {(sortie.participantEmails ?? []).length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {sortie.participantEmails!.map((email) => (
-                    <div key={email} className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 transition-colors rounded-full pl-1 pr-3 py-1">
-                      <img
-                        src={`https://api.dicebear.com/9.x/bottts/svg?seed=${encodeURIComponent(email)}`}
-                        alt=""
-                        className="w-6 h-6 rounded-full bg-white flex-shrink-0"
-                      />
-                      <span className="text-xs text-slate-600 font-medium">{email}</span>
-                      {user?.email === email && <span className="text-[10px] text-blue-500 font-bold ml-0.5">Moi</span>}
-                    </div>
-                  ))}
+              {/* Cartes participants */}
+              {(sortie.participantEmails ?? []).length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {sortie.participantEmails!.map((email) => {
+                    const isMe = user?.email === email;
+                    const displayName = email.split("@")[0];
+                    return (
+                      <div key={email} className={`flex items-center gap-3 rounded-2xl px-4 py-3 transition-colors ${isMe ? "bg-blue-50 ring-1 ring-blue-200" : "bg-slate-50"}`}>
+                        <img
+                          src={`https://api.dicebear.com/9.x/bottts/svg?seed=${encodeURIComponent(email)}`}
+                          alt=""
+                          className="w-10 h-10 rounded-full bg-white border border-slate-200 flex-shrink-0"
+                        />
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-sm font-semibold text-slate-800 truncate">{displayName}</span>
+                          <span className="text-xs text-slate-400 truncate">{email}</span>
+                        </div>
+                        {isMe && (
+                          <span className="ml-auto text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full flex-shrink-0">Moi</span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
+              ) : (
+                <p className="text-sm text-slate-400 text-center py-2">Aucun participant pour l&apos;instant — sois le premier !</p>
               )}
             </div>
 
