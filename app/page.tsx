@@ -156,8 +156,19 @@ export default function Home() {
   const [slogan, setSlogan] = useState(SLOGANS[0]);
   useEffect(() => {
     setSlogan(SLOGANS[Math.floor(Math.random() * SLOGANS.length)]);
-    if (!localStorage.getItem("userPreferences")) {
-      router.push("/onboarding");
+    // Redirect to onboarding only if user has no saved preferences AND no Airtable profile
+    const localPrefs = localStorage.getItem("userPreferences");
+    if (!localPrefs) {
+      const storedUser = localStorage.getItem("ride_user");
+      if (!storedUser) { router.push("/onboarding"); return; }
+      const { email } = JSON.parse(storedUser);
+      fetch(`/api/users?email=${encodeURIComponent(email)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!data || !data.onboardingDone) router.push("/onboarding");
+          else localStorage.setItem("userPreferences", JSON.stringify({ synced: true }));
+        })
+        .catch(() => router.push("/onboarding"));
     }
   }, []);
 
