@@ -341,7 +341,7 @@ export default function Home() {
 
       {/* ── Widget météo ── */}
       <section className="bg-gradient-to-b from-slate-50/80 to-white border-b border-slate-100">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-6">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Météo locale</span>
             <div className="flex-1 h-px bg-slate-100" />
@@ -353,7 +353,7 @@ export default function Home() {
 
       {/* ── Filtres sticky ── */}
       <div className="sticky top-16 z-20 bg-white/90 backdrop-blur-md border-b border-slate-100">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap gap-2 items-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap gap-2 items-center">
           <select value={filterSport} onChange={(e) => setFilterSport(e.target.value)} className={filterCls}>
             <option value="">Tous les sports</option>
             {sportsDispos.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -421,7 +421,7 @@ export default function Home() {
 
       {/* ── Bandeau personnalisation ── */}
       <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-indigo-100">
-        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <p className="text-sm text-indigo-700 font-medium">
             ✨ Personnalise tes sorties en 10 secondes
           </p>
@@ -434,7 +434,8 @@ export default function Home() {
       </div>
 
       {/* ── Toggle mobile Liste / Carte ── */}
-      <div className="lg:hidden sticky top-16 z-20 bg-white border-b border-slate-100 px-4 py-2 flex gap-2">
+      <div className="lg:hidden sticky top-16 z-20 bg-white border-b border-slate-100 py-2">
+      <div className="max-w-7xl mx-auto px-4 flex gap-2">
         <button
           onClick={() => setMobileView("list")}
           className={`flex-1 text-sm font-semibold py-2 rounded-xl transition-all ${mobileView === "list" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
@@ -448,13 +449,15 @@ export default function Home() {
           🗺️ Carte
         </button>
       </div>
+      </div>
 
       {/* ── Split layout : liste + carte ── */}
-      <div id="sorties-grid" className="flex flex-col lg:flex-row lg:items-start">
+      <div id="sorties-grid" className="max-w-7xl mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[65%_35%] gap-6 items-start">
 
-        {/* ── LEFT : liste (natural page scroll) ── */}
-        <div className={`w-full lg:flex-1 lg:border-r border-slate-100 bg-white ${mobileView === "map" ? "hidden lg:block" : ""}`}>
-          <div className="px-4 sm:px-5 py-4">
+        {/* ── LEFT : liste ── */}
+        <div className={`w-full ${mobileView === "map" ? "hidden lg:block" : ""}`}>
+          <div>
 
             {/* Skeletons */}
             {loading && (
@@ -616,19 +619,23 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ── RIGHT : carte sticky (desktop 35%) ── */}
-        <div className="hidden lg:block lg:w-[35%] sticky top-16 h-[60vh]">
-          <ExploreMap
-            sorties={filtered}
-            hoveredId={hoveredSortie}
-            onHover={setHoveredSortie}
-            height="100%"
-          />
+        {/* ── RIGHT : carte sticky (desktop) ── */}
+        <div className="hidden lg:block w-full sticky top-20">
+          <div className="h-[70vh] rounded-2xl overflow-hidden shadow-sm border border-slate-100">
+            <ExploreMap
+              sorties={filtered}
+              hoveredId={hoveredSortie}
+              onHover={setHoveredSortie}
+              height="100%"
+            />
+          </div>
         </div>
+
+        </div>{/* end grid */}
 
         {/* ── Mobile : carte plein écran quand toggle actif ── */}
         {mobileView === "map" && (
-          <div className="lg:hidden h-[calc(100vh-128px)]">
+          <div className="lg:hidden h-[calc(100vh-128px)] rounded-2xl overflow-hidden">
             <ExploreMap
               sorties={filtered}
               hoveredId={hoveredSortie}
@@ -638,7 +645,7 @@ export default function Home() {
           </div>
         )}
 
-      </div>
+      </div>{/* end max-w-7xl */}
 
       {/* ── Toast activité (bas-gauche) ── */}
       <div className={`fixed bottom-6 left-6 z-40 max-w-xs transition-all duration-500 ${
