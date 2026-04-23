@@ -168,6 +168,39 @@ function WeatherSkeleton() {
   );
 }
 
+// ─── Compact inline version ───────────────────────────────────────────────────
+
+export function WeatherCompact() {
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+
+  useEffect(() => {
+    async function load(lat: number, lon: number) {
+      const data = await fetchWeather(lat, lon).catch(() => null);
+      if (data) setWeather(data);
+    }
+    if (!navigator.geolocation) { load(DEFAULT_COORDS.lat, DEFAULT_COORDS.lon); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => load(pos.coords.latitude, pos.coords.longitude),
+      () => load(DEFAULT_COORDS.lat, DEFAULT_COORDS.lon),
+      { timeout: 5000 },
+    );
+  }, []);
+
+  if (!weather) return null;
+
+  const motivation = motivationMessage(weather);
+  const shortMsg = motivation?.text ?? `${weather.emoji} ${weather.currentTemp}° à ${weather.city}`;
+
+  return (
+    <div className="inline-flex items-center gap-2 bg-white/80 backdrop-blur-sm border border-slate-100 rounded-full px-4 py-1.5 text-sm text-slate-600 shadow-sm">
+      <span className="text-base leading-none">{weather.emoji}</span>
+      <span className="font-semibold tabular-nums">{weather.currentTemp}°</span>
+      <span className="text-slate-400">·</span>
+      <span className="text-slate-500 text-xs">{shortMsg.replace(/^[^\s]+\s/, "")}</span>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function WeatherWidget() {

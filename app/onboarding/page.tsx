@@ -480,6 +480,7 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { user } = useUser();
 
+  const [welcome, setWelcome]               = useState(true); // écran de bienvenue avant le questionnaire
   const [stepIndex, setStepIndex]           = useState(0);
   const [animating, setAnimating]           = useState(false);
   const [slideDir, setSlideDir]             = useState<"forward" | "back">("forward");
@@ -602,6 +603,44 @@ export default function OnboardingPage() {
   const slideClass = animating
     ? slideDir === "forward" ? "opacity-0 translate-y-3" : "opacity-0 -translate-y-3"
     : "opacity-100 translate-y-0";
+
+  // ── Écran de bienvenue ─────────────────────────────────────────────────────
+  if (welcome) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md text-center flex flex-col items-center gap-6">
+          <span className="text-6xl">🏅</span>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 leading-snug mb-3">
+              On t&apos;aide à trouver<br />les bonnes sorties
+            </h1>
+            <p className="text-slate-500 text-base leading-relaxed max-w-sm mx-auto">
+              Réponds à quelques questions pour te proposer des partenaires adaptés à ton niveau et tes sports.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 w-full">
+            <button
+              onClick={() => setWelcome(false)}
+              className="w-full py-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.98]"
+            >
+              Commencer →
+            </button>
+            <button
+              onClick={skip}
+              className="text-sm text-slate-400 hover:text-slate-600 transition-colors py-2"
+            >
+              Passer pour l&apos;instant
+            </button>
+          </div>
+          <div className="flex gap-6 text-center text-xs text-slate-400 mt-2">
+            <span>⏱️ 2 minutes</span>
+            <span>🎯 Résultats personnalisés</span>
+            <span>✏️ Modifiable</span>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col items-center justify-center px-4 py-10">

@@ -13,6 +13,7 @@ import { parseRoute } from "@/lib/mapbox/parseRoute";
 const ExploreMap = _dynamic(() => import("@/components/ExploreMap"), { ssr: false });
 const MiniMapPreview = _dynamic(() => import("@/components/MiniMapPreview"), { ssr: false });
 const WeatherWidget = _dynamic(() => import("@/components/WeatherWidget"), { ssr: false });
+const WeatherCompactDynamic = _dynamic(() => import("@/components/WeatherWidget").then(m => ({ default: m.WeatherCompact })), { ssr: false });
 const CommunauteBoard = _dynamic(() => import("@/components/CommunauteBoard"), { ssr: false });
 
 type Sortie = {
@@ -156,21 +157,14 @@ export default function Home() {
   const [slogan, setSlogan] = useState(SLOGANS[0]);
   useEffect(() => {
     setSlogan(SLOGANS[Math.floor(Math.random() * SLOGANS.length)]);
-    // Redirect to onboarding only if user has no saved preferences AND no Airtable profile
-    const localPrefs = localStorage.getItem("userPreferences");
-    if (!localPrefs) {
-      const storedUser = localStorage.getItem("ride_user");
-      if (!storedUser) { router.push("/onboarding"); return; }
-      const { email } = JSON.parse(storedUser);
-      fetch(`/api/users?email=${encodeURIComponent(email)}`)
-        .then(r => r.json())
-        .then(data => {
-          if (!data || !data.onboardingDone) router.push("/onboarding");
-          else localStorage.setItem("userPreferences", JSON.stringify({ synced: true }));
-        })
-        .catch(() => router.push("/onboarding"));
-    }
   }, []);
+
+  // Redirige vers onboarding seulement si l'utilisateur n'a pas de profil
+  function requireProfile(next: () => void) {
+    const prefs = localStorage.getItem("userPreferences");
+    if (prefs) { next(); return; }
+    router.push("/onboarding");
+  }
 
   useEffect(() => {
     fetch("/api/sorties")
@@ -285,23 +279,27 @@ export default function Home() {
             🏅 Sorties sportives près de chez toi
           </span>
 
+          {/* Météo compacte inline */}
+          <WeatherCompactDynamic />
+
           {/* Titre */}
           <div className="fade-in flex flex-col gap-3">
             <h1 className="text-3xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
               {slogan}
             </h1>
             <p className="text-base sm:text-lg text-slate-500 leading-relaxed max-w-lg mx-auto mt-2">
-              Rejoins une sortie ou crée la tienne en quelques secondes.
+              Trouve des partenaires près de chez toi ou crée ta sortie en 30 secondes.
             </p>
           </div>
 
           {/* Boutons */}
           <div className="fade-in flex flex-col sm:flex-row gap-3 w-full sm:w-auto sm:justify-center">
-            <Link href="/create" className="w-full sm:w-auto">
-              <button className="w-full sm:w-auto min-h-[48px] bg-blue-600 hover:bg-blue-700 hover:scale-[1.04] active:scale-[0.98] text-white font-semibold px-7 py-3.5 rounded-2xl transition-all duration-200 shadow-md hover:shadow-lg text-sm">
-                + Créer une sortie
-              </button>
-            </Link>
+            <button
+              onClick={() => requireProfile(() => router.push("/create"))}
+              className="w-full sm:w-auto min-h-[48px] bg-blue-600 hover:bg-blue-700 hover:scale-[1.04] active:scale-[0.98] text-white font-semibold px-7 py-3.5 rounded-2xl transition-all duration-200 shadow-md hover:shadow-lg text-sm"
+            >
+              + Créer une sortie
+            </button>
             <button
               onClick={() => document.getElementById("sorties-grid")?.scrollIntoView({ behavior: "smooth" })}
               className="w-full sm:w-auto min-h-[48px] bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 hover:scale-[1.04] active:scale-[0.98] text-slate-700 font-semibold px-7 py-3.5 rounded-2xl transition-all duration-200 shadow-sm text-sm"
@@ -336,18 +334,6 @@ export default function Home() {
               </div>
             </div>
           )}
-        </div>
-      </section>
-
-      {/* ── Widget météo ── */}
-      <section className="bg-gradient-to-b from-slate-50/80 to-white border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-6">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Météo locale</span>
-            <div className="flex-1 h-px bg-slate-100" />
-            <span className="text-xs text-slate-300">OpenWeatherMap</span>
-          </div>
-          <WeatherWidget />
         </div>
       </section>
 
@@ -386,38 +372,6 @@ export default function Home() {
           </span>
         </div>
       </div>
-
-      {/* ── Section marketing ── */}
-      <section className="bg-white border-b border-slate-100">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
-          <div className="text-center mb-10">
-            <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Pourquoi RidePlanner ?
-            </h2>
-            <p className="text-slate-400 mt-2 text-sm">Tout ce qu&apos;il te faut pour sortir, sans prise de tête.</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
-            {[
-              { emoji: "🧭", titre: "Trouve des sorties près de toi",     desc: "Grâce à la carte interactive, repère les sorties autour de toi en un coup d'œil." },
-              { emoji: "🤝", titre: "Rencontre des partenaires sportifs", desc: "Rejoins ou crée une sortie en 1 clic et connecte-toi avec ta communauté." },
-              { emoji: "🗺️", titre: "Visualise les parcours",             desc: "Trace et découvre les itinéraires directement sur la carte avant de partir." },
-            ].map((item) => (
-              <div key={item.titre} className="group flex flex-col items-start gap-4 bg-slate-50 hover:bg-blue-50 border border-slate-100 hover:border-blue-200 rounded-2xl p-6 transition-all duration-200 hover:shadow-md">
-                <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-2xl shadow-sm border border-slate-100 group-hover:scale-110 transition-transform duration-200">
-                  {item.emoji}
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-base leading-snug">{item.titre}</h3>
-                  <p className="text-slate-500 text-sm mt-1.5 leading-relaxed">{item.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Communauté / annonces ── */}
-      <CommunauteBoard />
 
       {/* ── Bandeau personnalisation ── */}
       <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-indigo-100">
@@ -589,7 +543,7 @@ export default function Home() {
                         {!isOrganizer && (
                           <button
                             type="button"
-                            onClick={(e) => { e.preventDefault(); !dejaInscrit && !joining && rejoindre(s.id); }}
+                            onClick={(e) => { e.preventDefault(); !dejaInscrit && !joining && requireProfile(() => rejoindre(s.id)); }}
                             disabled={!!joining || isFull || isClosed || dejaInscrit}
                             className={`text-xs font-bold px-3 py-1.5 rounded-xl flex-shrink-0 transition-all active:scale-95 ${
                               dejaInscrit || joined === s.id ? "bg-emerald-100 text-emerald-600"
@@ -646,6 +600,48 @@ export default function Home() {
         )}
 
       </div>{/* end max-w-7xl */}
+
+      {/* ── Communauté / annonces ── */}
+      <CommunauteBoard />
+
+      {/* ── Section marketing ── */}
+      <section className="bg-white border-t border-b border-slate-100">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">Pourquoi RidePlanner ?</h2>
+            <p className="text-slate-400 mt-2 text-sm">Tout ce qu&apos;il te faut pour sortir, sans prise de tête.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+            {[
+              { emoji: "🧭", titre: "Trouve des sorties près de toi",     desc: "Grâce à la carte interactive, repère les sorties autour de toi en un coup d'œil." },
+              { emoji: "🤝", titre: "Rencontre des partenaires sportifs", desc: "Rejoins ou crée une sortie en 1 clic et connecte-toi avec ta communauté." },
+              { emoji: "🗺️", titre: "Visualise les parcours",             desc: "Trace et découvre les itinéraires directement sur la carte avant de partir." },
+            ].map((item) => (
+              <div key={item.titre} className="group flex flex-col items-start gap-4 bg-slate-50 hover:bg-blue-50 border border-slate-100 hover:border-blue-200 rounded-2xl p-6 transition-all duration-200 hover:shadow-md">
+                <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-2xl shadow-sm border border-slate-100 group-hover:scale-110 transition-transform duration-200">
+                  {item.emoji}
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base leading-snug">{item.titre}</h3>
+                  <p className="text-slate-500 text-sm mt-1.5 leading-relaxed">{item.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Météo complète en bas ── */}
+      <section className="bg-slate-50 border-t border-slate-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Météo locale</span>
+            <div className="flex-1 h-px bg-slate-100" />
+            <span className="text-xs text-slate-300">OpenWeatherMap</span>
+          </div>
+          <WeatherWidget />
+        </div>
+      </section>
 
       {/* ── Toast activité (bas-gauche) ── */}
       <div className={`fixed bottom-6 left-6 z-40 max-w-xs transition-all duration-500 ${
