@@ -91,19 +91,28 @@ export async function POST(request: Request) {
       records = await base("demandes").create([{ fields }]);
     } catch (e1) {
       console.error("demandes POST attempt 1 failed:", JSON.stringify(e1));
-      const coreFields: FieldSet = {
-        sport:    fields.sport,
-        messages: fields.messages ?? "",
-        zone:     fields.zone,
-        type:     fields.type,
-        createdBy: fields.createdBy,
-      };
+      // Essai avec "message" (sans s)
+      const fields2 = { ...fields, message: fields.messages ?? "", messages: undefined };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (fields2 as any).messages;
       try {
-        records = await base("demandes").create([{ fields: coreFields }]);
+        records = await base("demandes").create([{ fields: fields2 as FieldSet }]);
       } catch (e2) {
         console.error("demandes POST attempt 2 failed:", JSON.stringify(e2));
-        const msg = (e2 as { message?: string })?.message ?? "Erreur création";
-        return Response.json({ error: msg }, { status: 500 });
+        // Fallback minimal sans champ message
+        const coreFields: FieldSet = {
+          sport:    fields.sport,
+          zone:     fields.zone,
+          type:     fields.type,
+          createdBy: fields.createdBy,
+        };
+        try {
+          records = await base("demandes").create([{ fields: coreFields }]);
+        } catch (e3) {
+          console.error("demandes POST attempt 3 failed:", JSON.stringify(e3));
+          const msg = (e3 as { message?: string })?.message ?? "Erreur création";
+          return Response.json({ error: msg }, { status: 500 });
+        }
       }
     }
 
