@@ -22,8 +22,17 @@ export async function GET() {
       records = await getBase()("demandes").select({ maxRecords: 50 }).firstPage();
     }
 
+    const KNOWN_SPORTS = ["Course à pied","Vélo","Randonnée","Trail","Natation","Triathlon","Autre","Cyclisme","Running","Marche"];
+
     return Response.json(
-      records.map((r) => ({
+      records
+        .filter((r) => {
+          const sport = (r.fields["sport"] as string) ?? "";
+          const zone  = (r.fields["zone"]  as string) ?? "";
+          return sport.trim().length > 0 && zone.trim().length > 0
+            && KNOWN_SPORTS.some((s) => sport.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(sport.toLowerCase()));
+        })
+        .map((r) => ({
         id: r.id,
         sport:     (r.fields["sport"]     as string) ?? "",
         message:   (r.fields["messages"]   as string) ?? "",
