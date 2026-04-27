@@ -8,7 +8,6 @@ import type { GPXData } from "@/lib/gpx/parseGPX";
 import {
   sampleGeometry,
   calculateElevationProfile,
-  getDifficulty,
   buildSlopeGeoJSON,
   buildPlainGeoJSON,
   haversine,
@@ -32,6 +31,7 @@ type Segment = {
 type Props = {
   onLocationChange: (coords: { lat: number; lng: number }, adresse?: string) => void;
   onRouteChange:    (points: Point[], storedRoute?: StoredRoute) => void;
+  onModeChange?:    (mode: ExtendedMode) => void;
   height?:          string;
   initialGpx?:      GPXData | null;
 };
@@ -171,7 +171,7 @@ function setPreviewData(map: mapboxgl.Map, coords: Point[]) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function RoutePickerMap({
-  onLocationChange, onRouteChange, height = "320px", initialGpx,
+  onLocationChange, onRouteChange, onModeChange, height = "320px", initialGpx,
 }: Props) {
   const containerRef        = useRef<HTMLDivElement>(null);
   const mapRef              = useRef<mapboxgl.Map | null>(null);
@@ -387,13 +387,7 @@ export default function RoutePickerMap({
     // Show plain green immediately
     setRouteData(map, buildPlainGeoJSON(fullGeometry));
 
-    // Fit map to include new segment
-    map.fitBounds(computeBounds(fullGeometry), {
-      padding: { top: 50, bottom: 50, left: 40, right: 40 },
-      maxZoom: 15, duration: 600,
-    });
-
-    // ── Elevation (wait for DEM tiles after fitBounds) ──────────────────────
+    // ── Elevation ────────────────────────────────────────────────────────────
     setLoadingElev(true);
 
     // Wait for map to be idle after the flyTo
@@ -440,6 +434,7 @@ export default function RoutePickerMap({
   async function changeTravelMode(newMode: ExtendedMode) {
     setTravelMode(newMode);
     travelModeRef.current = newMode;
+    onModeChange?.(newMode);
     const map = mapRef.current;
     const pts = waypointsRef.current;
     if (!map || pts.length < 2) return;
@@ -576,10 +571,6 @@ export default function RoutePickerMap({
 
   // ── Derived ─────────────────────────────────────────────────────────────────
 
-  const difficulty = routeInfo?.gain != null && routeInfo.gain > 0
-    ? getDifficulty(routeInfo.gain, routeInfo.distanceKm ?? 0)
-    : null;
-
   const isLoading  = loadingRoute || loadingElev;
   const hasSlopes  = (routeInfo?.slopes?.length ?? 0) > 0;
   const totalDist  = segmentsRef.current.reduce((s, seg) => s + seg.distanceKm, 0);
@@ -684,11 +675,6 @@ export default function RoutePickerMap({
                 )}
                 {routeInfo.gain != null && routeInfo.gain > 0 && (
                   <Stat icon="⬆️" value={`${routeInfo.gain} m`} title="Dénivelé positif" />
-                )}
-                {difficulty && (
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${difficulty.bg} ${difficulty.color}`}>
-                    {difficulty.label}
-                  </span>
                 )}
               </>
             ) : (

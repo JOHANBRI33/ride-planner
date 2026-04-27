@@ -13,6 +13,13 @@ const RoutePickerMap = _dynamic(() => import("@/components/RoutePickerMap"), { s
 const SPORTS = ["Course à pied", "Vélo", "Randonnée", "Trail", "Natation", "Triathlon", "Autre"];
 const NIVEAUX = ["Débutant", "Intermédiaire", "Avancé", "Expert"];
 
+type ExtendedMode = "cycling" | "walking" | "swimming";
+const MODE_TO_SPORT: Record<ExtendedMode, string> = {
+  cycling:  "Vélo",
+  walking:  "Course à pied",
+  swimming: "Natation",
+};
+
 export default function CreatePage() {
   const { user } = useUser();
   const router = useRouter();
@@ -27,6 +34,7 @@ export default function CreatePage() {
   const [gpxData, setGpxData] = useState<GPXData | null>(null);
   const [gpxStatus, setGpxStatus] = useState<"idle" | "success" | "error">("idle");
   const [gpxName, setGpxName] = useState("");
+  const [sport, setSport] = useState("Vélo");
   const gpxInputRef = useRef<HTMLInputElement>(null);
 
   function handleGpxFile(file: File) {
@@ -89,7 +97,7 @@ export default function CreatePage() {
       date: (form.elements.namedItem("date") as HTMLInputElement).value,
       heure: (form.elements.namedItem("heure") as HTMLInputElement).value,
       lieu: (form.elements.namedItem("lieu") as HTMLInputElement).value,
-      sport: (form.elements.namedItem("sport") as HTMLInputElement).value,
+      sport,
       niveau: (form.elements.namedItem("niveau") as HTMLSelectElement).value,
       participantsMax: (form.elements.namedItem("participantsMax") as HTMLInputElement).value,
       latitude: coords?.lat ?? null,
@@ -111,11 +119,8 @@ export default function CreatePage() {
     setLoading(false);
 
     if (res.ok) {
-      form.reset();
-      setCoords(null);
-      setRoutePoints([]);
-      setStoredRoute(null);
       setSuccess(true);
+      setTimeout(() => router.push("/dashboard"), 2000);
     } else {
       setError("Erreur lors de la création. Réessaie.");
     }
@@ -199,6 +204,7 @@ export default function CreatePage() {
             <RoutePickerMap
               onLocationChange={handleLocationChange}
               onRouteChange={(pts, sr) => { setRoutePoints(pts); setStoredRoute(sr ?? null); }}
+              onModeChange={(m) => setSport(MODE_TO_SPORT[m])}
               height="320px"
               initialGpx={gpxData}
             />
@@ -209,10 +215,14 @@ export default function CreatePage() {
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Sport *">
-              <input name="sport" required placeholder="Ex : Trail, Vélo…" list="sports-list" className={inputCls} />
-              <datalist id="sports-list">
-                {SPORTS.map((s) => <option key={s} value={s} />)}
-              </datalist>
+              <select
+                value={sport}
+                onChange={(e) => setSport(e.target.value)}
+                required
+                className={inputCls}
+              >
+                {SPORTS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
             </Field>
             <Field label="Niveau *">
               <select name="niveau" required className={inputCls}>
