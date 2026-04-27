@@ -7,7 +7,6 @@ import Link from "next/link";
 import { useUser } from "@/context/UserContext";
 import { resolveSortieImage, SPORT_IMAGE_FALLBACK } from "@/lib/getAutoImage";
 import { parseRoute } from "@/lib/mapbox/parseRoute";
-import { getDifficulty } from "@/lib/elevation/elevationService";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
 const RoutePickerMap = dynamic(() => import("@/components/RoutePickerMap"), { ssr: false });
@@ -324,9 +323,6 @@ export default function SortiePage() {
   const routeGain = parsedRouteData?.gain ?? sortie.elevationGain ?? null;
   const routeLoss = parsedRouteData?.loss ?? null;
   const routeSlopes = parsedRouteData?.slopes;
-  const difficulty = routeGain != null && routeDistance != null && routeGain > 0
-    ? getDifficulty(routeGain, routeDistance)
-    : null;
 
   // ─── Rendu ───────────────────────────────────────────────────────────────────
 
@@ -410,8 +406,8 @@ export default function SortiePage() {
               />
             </div>
 
-            {/* Stats parcours — affichées dès qu'elles sont disponibles */}
-            {(routeDistance != null || routeGain != null || difficulty) && (
+            {/* Stats parcours */}
+            {(routeDistance != null || routeGain != null) && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {routeDistance != null && (
                   <InfoCard icon="📏" label="Distance" value={`${routeDistance.toFixed(1)} km`} />
@@ -421,15 +417,6 @@ export default function SortiePage() {
                 )}
                 {routeLoss != null && routeLoss > 0 && (
                   <InfoCard icon="⬇️" label="Dénivelé −" value={`${routeLoss} m`} valueClass="text-red-600" />
-                )}
-                {difficulty && (
-                  <div className={`rounded-2xl px-4 py-3 flex flex-col gap-1 border ${difficulty.bg}`}>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-base">🎯</span>
-                      <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Difficulté</p>
-                    </div>
-                    <p className={`text-sm font-bold ${difficulty.color}`}>{difficulty.label}</p>
-                  </div>
                 )}
               </div>
             )}
@@ -518,11 +505,6 @@ export default function SortiePage() {
                     )}
                     {routeLoss != null && routeLoss > 0 && (
                       <StatBadge icon="⬇️" label="D−" value={`${routeLoss} m`} color="text-red-600" />
-                    )}
-                    {difficulty && (
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${difficulty.bg} ${difficulty.color}`}>
-                        {difficulty.label}
-                      </span>
                     )}
                     {/* Légende pentes */}
                     {routeSlopes && routeSlopes.length > 0 && (

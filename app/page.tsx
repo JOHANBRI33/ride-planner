@@ -7,11 +7,10 @@ import _dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
-import { resolveSortieImage, SPORT_IMAGE_FALLBACK } from "@/lib/getAutoImage";
+import { resolveSortieImage, SPORT_IMAGE_FALLBACK, getRouteStaticImageUrl } from "@/lib/getAutoImage";
 import { parseRoute } from "@/lib/mapbox/parseRoute";
 
 const ExploreMap = _dynamic(() => import("@/components/ExploreMap"), { ssr: false });
-const MiniMapPreview = _dynamic(() => import("@/components/MiniMapPreview"), { ssr: false });
 const WeatherWidget = _dynamic(() => import("@/components/WeatherWidget"), { ssr: false });
 const WeatherCompactDynamic = _dynamic(() => import("@/components/WeatherWidget").then(m => ({ default: m.WeatherCompact })), { ssr: false });
 const CommunauteBoard = _dynamic(() => import("@/components/CommunauteBoard"), { ssr: false });
@@ -34,6 +33,8 @@ type Sortie = {
   organizerId?: string | null;
   status?: string;
   route?: string | null;
+  distanceKm?: number | null;
+  elevationGain?: number | null;
 };
 
 type Bounds = { minLng: number; maxLng: number; minLat: number; maxLat: number } | null;
@@ -147,7 +148,6 @@ export default function Home() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [communauteAutoOpen, setCommunauteAutoOpen] = useState<"cherche" | "propose" | null>(null);
   const communauteSectionRef = useRef<HTMLDivElement>(null);
-  const [showMapFor, setShowMapFor] = useState<Set<string>>(new Set());
   const [hoveredSortie, setHoveredSortie] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
   const [userLat, setUserLat] = useState<number | null>(null);
@@ -207,9 +207,12 @@ export default function Home() {
   const markers = filtered
     .filter((s) => s.latitude && s.longitude)
     .map((s) => ({
-      id: s.id, titre: s.titre, date: s.date, heure: s.heure,
+      id: s.id, titre: s.titre, lieu: s.lieu, date: s.date, heure: s.heure,
+      sport: s.sport, niveau: s.niveau,
       latitude: s.latitude!, longitude: s.longitude!,
-      color: SPORT_COLOR[s.sport] ?? "#3b82f6",
+      distanceKm: s.distanceKm ?? null,
+      nbParticipants: s.nbParticipants, participantsMax: s.participantsMax,
+      status: s.status,
     }));
 
   const totalParticipants = sorties.reduce((acc, s) => acc + (s.nbParticipants ?? 0), 0);
@@ -459,17 +462,8 @@ export default function Home() {
 
               const parsedRouteData = parseRoute(s.route);
               const parsedRoute = parsedRouteData?.geometry ?? null;
-              const hasRoute = parsedRoute && parsedRoute.length >= 2;
-              const mapShown = showMapFor.has(s.id);
-              const toggleMap = (e: React.MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setShowMapFor((prev) => {
-                  const next = new Set(prev);
-                  next.has(s.id) ? next.delete(s.id) : next.add(s.id);
-                  return next;
-                });
-              };
+              const hasRoute = !!(parsedRoute && parsedRoute.length >= 2);
+              const routeImgUrl = hasRoute ? getRouteStaticImageUrl(parsedRoute!, 400, 240) : "";
 
               return (
                 <Link key={s.id} href={`/sorties/${s.id}`}>
@@ -484,33 +478,34 @@ export default function Home() {
                   >
                     {/* Image */}
                     <div className="relative w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0 rounded-xl overflow-hidden bg-slate-200">
-                      {hasRoute && mapShown ? (
-                        <div className="absolute inset-0">
-                          <MiniMapPreview route={parsedRoute!} slopes={parsedRouteData?.slopes} height="100%" />
-                        </div>
-                      ) : (
-                        <img
-                          src={resolveSortieImage(s.image_url ?? s.image, s.sport, s.lieu)}
-                          alt={s.titre}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).src =
-                              SPORT_IMAGE_FALLBACK[s.sport] ?? SPORT_IMAGE_FALLBACK["default"];
-                          }}
-                        />
-                      )}
-                      {/* Sport dot */}
-                      <div className="absolute top-1.5 left-1.5 text-sm drop-shadow">{SPORT_EMOJI[s.sport] ?? "🏅"}</div>
-                      {/* Parcours toggle */}
+                      <img
+                        src={hasRoute && routeImgUrl
+                          ? routeImgUrl
+                          : resolveSortieImage(s.image_url ?? s.image, s.sport, s.lieu)}
+                        alt={s.titre}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src =
+                            SPORT_IMAGE_FALLBACK[s.sport] ?? SPORT_IMAGE_FALLBACK["default"];
+                        }}
+                      />
+                      {/* Overlay km + niveau si parcours dispo */}
                       {hasRoute && (
-                        <button
-                          type="button"
-                          onClick={toggleMap}
-                          className="absolute bottom-1 right-1 bg-white/90 text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow text-slate-600 hover:bg-white"
-                        >
-                          {mapShown ? "📷" : "🗺️"}
-                        </button>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex flex-col justify-end px-1.5 pb-1.5 gap-0.5">
+                          {s.distanceKm != null && (
+                            <span className="text-white text-[10px] font-bold drop-shadow leading-none">
+                              📏 {s.distanceKm.toFixed(1)} km
+                            </span>
+                          )}
+                          {s.elevationGain != null && s.elevationGain > 0 && (
+                            <span className="text-white text-[10px] font-semibold drop-shadow leading-none">
+                              ⬆️ {s.elevationGain} m
+                            </span>
+                          )}
+                        </div>
                       )}
+                      {/* Sport emoji */}
+                      <div className="absolute top-1.5 left-1.5 text-sm drop-shadow">{SPORT_EMOJI[s.sport] ?? "🏅"}</div>
                     </div>
 
                     {/* Content */}

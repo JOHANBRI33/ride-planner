@@ -61,3 +61,36 @@ export function resolveSortieImage(
   if (image_url) return image_url;
   return getAutoImage(sport, lieu);
 }
+
+/**
+ * Generates a Mapbox Static API image URL for a route (LineString).
+ * Returns empty string if no token or fewer than 2 points.
+ */
+export function getRouteStaticImageUrl(
+  geometry: [number, number][],
+  width = 400,
+  height = 240,
+): string {
+  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  if (!token || geometry.length < 2) return "";
+
+  // Downsample to max 60 points to stay well within URL limits
+  const maxPts = 60;
+  const step = (geometry.length - 1) / (maxPts - 1);
+  const pts: [number, number][] = geometry.length > maxPts
+    ? Array.from({ length: maxPts }, (_, i) => geometry[Math.round(i * step)])
+    : geometry;
+
+  const geojson = JSON.stringify({
+    type: "Feature",
+    properties: { stroke: "#10b981", "stroke-width": 3, "stroke-opacity": 0.9 },
+    geometry: { type: "LineString", coordinates: pts },
+  });
+
+  const encoded = encodeURIComponent(geojson);
+  return (
+    `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/` +
+    `geojson(${encoded})/auto/${width}x${height}` +
+    `?padding=30&access_token=${token}`
+  );
+}
