@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import _dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -70,6 +70,48 @@ const NIVEAU_STYLE: Record<string, string> = {
 };
 
 const NIVEAUX = ["Débutant", "Intermédiaire", "Avancé", "Expert"];
+
+// ─── Helpers personnalisation ──────────────────────────────────────────────────
+
+// Mapping sport-key onboarding → noms de sport dans les sorties
+const SPORT_KEY_TO_SORTIE: Record<string, string[]> = {
+  cycling:  ["Vélo"],
+  running:  ["Course à pied"],
+  hiking:   ["Randonnée", "Trail"],
+  swimming: ["Natation"],
+  other:    [],
+};
+
+// Mapping niveau onboarding → niveau sortie
+const LEVEL_TO_NIVEAU: Record<string, string> = {
+  beginner:     "Débutant",
+  intermediate: "Intermédiaire",
+  advanced:     "Avancé",
+  expert:       "Expert",
+};
+
+type ProfilePrefs = {
+  sports: string[];       // sport names ("Vélo", "Course à pied"…)
+  niveaux: string[];      // ["Débutant", "Intermédiaire"…] – union of sport levels
+};
+
+function parseProfilePrefs(profile: Record<string, string | undefined> | null): ProfilePrefs | null {
+  if (!profile || profile.onboardingDone !== "true") return null;
+  const rawSports = (profile.sports ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const sports = rawSports.flatMap((k) => SPORT_KEY_TO_SORTIE[k] ?? []);
+
+  // Collect all available niveaux from sport-specific fields
+  const levelKeys = [
+    profile.cycling_level,
+    profile.running_pace  === "sub5" || profile.running_pace === "5to6" ? "advanced"
+      : profile.running_pace === "6to7" ? "intermediate" : profile.running_pace === "7plus" ? "beginner" : undefined,
+    profile.swimming_level,
+  ].filter(Boolean) as string[];
+
+  const niveaux = [...new Set(levelKeys.map((k) => LEVEL_TO_NIVEAU[k]).filter(Boolean))];
+
+  return sports.length > 0 ? { sports, niveaux } : null;
+}
 
 const ACTIVITY_TOASTS = [
   "🔥 2 personnes viennent de rejoindre une sortie",
@@ -157,16 +199,32 @@ export default function Home() {
   const [userLng, setUserLng] = useState<number | null>(null);
   const [filterRadius, setFilterRadius] = useState<number | null>(null);
   const [locating, setLocating] = useState(false);
-  const { user } = useUser();
+  const { user, profile } = useUser();
   const router = useRouter();
+  const [profilToast, setProfilToast] = useState(false);
 
   const [slogan, setSlogan] = useState(SLOGANS[0]);
   useEffect(() => {
     setSlogan(SLOGANS[Math.floor(Math.random() * SLOGANS.length)]);
   }, []);
 
-  // Redirige vers onboarding seulement si l'utilisateur n'a pas de profil
+  // Toast "Profil configuré" si retour d'onboarding
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("profil") === "configured") {
+      setProfilToast(true);
+      // Nettoie l'URL sans rechargement
+      window.history.replaceState({}, "", window.location.pathname);
+      setTimeout(() => setProfilToast(false), 5000);
+    }
+  }, []);
+
+  // Redirige vers onboarding seulement si pas encore fait
   function requireProfile(next: () => void) {
+    // Onboarding déjà complété (Airtable)
+    if (profile?.onboardingDone === "true") { next(); return; }
+    // Onboarding complété ou skippé (localStorage fallback)
     const prefs = localStorage.getItem("userPreferences");
     if (prefs) { next(); return; }
     router.push("/onboarding");
@@ -233,6 +291,25 @@ export default function Home() {
   const countParticipants = useCountUp(loading ? 0 : totalParticipants);
   const countSports = useCountUp(loading ? 0 : totalSports);
 
+  // ── Sorties personnalisées ─────────────────────────────────────────────────
+  const profilePrefs = useMemo(() => parseProfilePrefs(profile as Record<string, string | undefined> | null), [profile]);
+
+  const personalizedSorties = useMemo(() => {
+    if (!profilePrefs || sorties.length === 0) return [];
+    return sorties
+      .filter((s) => {
+        if (!profilePrefs.sports.includes(s.sport)) return false;
+        // Si on a des niveaux de préférence, filtrer (mais rester permissif)
+        if (profilePrefs.niveaux.length > 0 && s.niveau) {
+          const ok = profilePrefs.niveaux.includes(s.niveau)
+            || s.niveau === "Débutant"; // toujours inclure débutant
+          if (!ok) return false;
+        }
+        return true;
+      })
+      .slice(0, 4);
+  }, [profilePrefs, sorties]);
+
   const hasFilters = filterSport || filterNiveau || filterDate || filterRadius;
 
   function resetFilters() {
@@ -276,6 +353,16 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-50">
+
+      {/* ── Toast profil configuré ── */}
+      <div className={`fixed top-20 left-1/2 -translate-x-1/2 z-50 transition-all duration-500 ${
+        profilToast ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-2 pointer-events-none"
+      }`}>
+        <div className="flex items-center gap-3 bg-emerald-600 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl">
+          <span className="text-lg">🎯</span>
+          Profil configuré — on te propose des sorties adaptées !
+        </div>
+      </div>
 
       {/* ── HERO ── */}
       <section className="relative overflow-hidden border-b border-slate-100">
@@ -395,11 +482,13 @@ export default function Home() {
       <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-indigo-100">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <p className="text-sm text-indigo-700 font-medium">
-            ✨ Personnalise tes sorties en 10 secondes
+            {profilePrefs
+              ? `🎯 Sorties filtrées selon ton profil · ${profilePrefs.sports.join(", ")}`
+              : "✨ Personnalise tes sorties selon ton sport et ton niveau"}
           </p>
           <Link href="/onboarding">
-            <button className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 active:scale-[0.97] text-white px-4 py-1.5 rounded-full transition-all duration-200 shadow-sm flex-shrink-0">
-              Adapter →
+            <button className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 active:scale-[0.97] text-white px-4 py-1.5 rounded-full transition-all duration-200 shadow-sm flex-shrink-0 whitespace-nowrap">
+              🎯 Personnaliser mes sorties
             </button>
           </Link>
         </div>
@@ -430,6 +519,63 @@ export default function Home() {
         {/* ── LEFT : liste ── */}
         <div className={`w-full ${mobileView === "map" ? "hidden lg:block" : ""}`}>
           <div>
+
+            {/* ── Sorties pour toi ── */}
+            {!loading && profilePrefs && personalizedSorties.length > 0 && !hasFilters && (
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <h2 className="text-base font-bold text-slate-800">🎯 Sorties pour toi</h2>
+                  <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full font-medium">
+                    {profilePrefs.sports.join(" · ")}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-2.5">
+                  {personalizedSorties.map((s) => {
+                    const isFull    = (s.nbParticipants ?? 0) >= s.participantsMax;
+                    const isClosed  = s.status === "closed";
+                    const isOrg     = user?.id === s.organizerId;
+                    const dejaInsc  = user ? (s.participantIds ?? []).includes(user.id) : false;
+                    const emoji     = SPORT_EMOJI[s.sport] ?? "🏅";
+                    const colorCls  = SPORT_COLOR[s.sport] ?? "#64748b";
+                    const pct       = Math.min(100, ((s.nbParticipants ?? 0) / s.participantsMax) * 100);
+                    return (
+                      <Link key={s.id} href={`/sorties/${s.id}`}>
+                        <div className="flex items-center gap-3 bg-gradient-to-r from-white to-indigo-50/40 rounded-2xl border border-indigo-100 hover:border-indigo-300 hover:shadow-sm p-3 cursor-pointer transition-all duration-150">
+                          <span className="text-2xl flex-shrink-0">{emoji}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-slate-900 text-sm truncate">{s.titre}</p>
+                            <p className="text-xs text-slate-500 truncate">📍 {s.lieu} · 📅 {s.date}</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                              style={{ background: colorCls + "18", color: colorCls }}>
+                              {s.sport}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              👥 {s.nbParticipants ?? 0}/{s.participantsMax}
+                            </span>
+                          </div>
+                          {!isOrg && !dejaInsc && !isFull && !isClosed && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); requireProfile(() => rejoindre(s.id)); }}
+                              disabled={!!joining}
+                              className="ml-1 text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-white px-3 py-1.5 rounded-xl flex-shrink-0 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                              {joining === s.id ? "…" : "Rejoindre"}
+                            </button>
+                          )}
+                          {(dejaInsc || joining === s.id) && (
+                            <span className="ml-1 text-xs font-bold text-emerald-600 flex-shrink-0">✓</span>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+                <div className="h-px bg-slate-100 mt-5 mb-1" />
+              </div>
+            )}
 
             {/* Skeletons */}
             {loading && (

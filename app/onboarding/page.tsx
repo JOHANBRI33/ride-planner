@@ -478,9 +478,11 @@ function AvatarStep({
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { user } = useUser();
+  const { user, profile } = useUser();
 
-  const [welcome, setWelcome]               = useState(true); // écran de bienvenue avant le questionnaire
+  // Si l'onboarding a déjà été fait, on saute l'écran de bienvenue
+  const alreadyDone = profile?.onboardingDone === "true";
+  const [welcome, setWelcome]               = useState(!alreadyDone); // skip welcome si déjà fait
   const [stepIndex, setStepIndex]           = useState(0);
   const [animating, setAnimating]           = useState(false);
   const [slideDir, setSlideDir]             = useState<"forward" | "back">("forward");
@@ -587,7 +589,8 @@ export default function OnboardingPage() {
     }
 
     setSaving(false);
-    router.push("/");
+    // Feedback sur la homepage
+    router.push("/?profil=configured");
   }
 
   function goBack() {
@@ -604,7 +607,7 @@ export default function OnboardingPage() {
     ? slideDir === "forward" ? "opacity-0 translate-y-3" : "opacity-0 -translate-y-3"
     : "opacity-100 translate-y-0";
 
-  // ── Écran de bienvenue ─────────────────────────────────────────────────────
+  // ── Écran de bienvenue (uniquement première fois) ─────────────────────────
   if (welcome) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col items-center justify-center px-4 py-10">
@@ -642,12 +645,20 @@ export default function OnboardingPage() {
     );
   }
 
+  // ── Écran d'édition si déjà fait (welcome=false dès le départ) ────────────
+  // → on montre directement le questionnaire avec un header différent
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col items-center justify-center px-4 py-10">
       <div className={`w-full max-w-lg transition-all duration-200 ease-out ${slideClass}`}>
 
         {/* Header */}
         <div className="text-center mb-6">
+          {alreadyDone && stepIndex === 0 && (
+            <div className="mb-4 inline-flex items-center gap-2 bg-blue-50 border border-blue-100 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+              ✏️ Modification de tes préférences sportives
+            </div>
+          )}
           <span className="text-5xl mb-3 block">{currentStep.emoji}</span>
           <div className="flex items-center justify-center gap-2 mb-3 flex-wrap">
             <span className="text-xs font-semibold text-slate-400 tracking-widest uppercase">
