@@ -31,6 +31,8 @@ type Sortie = {
   organizerEmail?: string | null;
   status?: string;
   route?: string | null;
+  avgRating?: number | null;
+  nbRatings?: number | null;
   distanceKm?: number | null;
   elevationGain?: number | null;
   route_geometry?: string | null;
@@ -382,11 +384,18 @@ export default function SortiePage() {
               <h1 className="text-3xl font-bold text-white leading-tight drop-shadow">
                 {sortie.titre}
               </h1>
-              {sortie.organizerEmail && (
-                <p className="text-white/70 text-sm mt-1">
-                  Organisé par <span className="text-white font-medium">{sortie.organizerEmail}</span>
-                </p>
-              )}
+              <div className="flex items-center gap-3 flex-wrap mt-1">
+                {sortie.organizerEmail && (
+                  <p className="text-white/70 text-sm">
+                    Organisé par <span className="text-white font-medium">{sortie.organizerEmail}</span>
+                  </p>
+                )}
+                {sortie.avgRating != null && sortie.nbRatings != null && sortie.nbRatings > 0 && (
+                  <span className="text-xs font-bold bg-white/20 backdrop-blur-sm text-white px-2.5 py-1 rounded-full">
+                    ⭐ {sortie.avgRating.toFixed(1)} · {sortie.nbRatings} avis
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 

@@ -35,6 +35,8 @@ type Sortie = {
   route?: string | null;
   distanceKm?: number | null;
   elevationGain?: number | null;
+  avgRating?: number | null;
+  nbRatings?: number | null;
 };
 
 type Bounds = { minLng: number; maxLng: number; minLat: number; maxLat: number } | null;
@@ -520,6 +522,11 @@ export default function Home() {
                           {isOrganizer && <span className="text-[10px] font-bold bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full">👑 Ma sortie</span>}
                           {isClosed && <span className="text-[10px] font-semibold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">🔒 Clôturée</span>}
                           {!isClosed && isFull && <span className="text-[10px] font-semibold bg-red-100 text-red-500 px-1.5 py-0.5 rounded-full">Complet</span>}
+                          {s.avgRating != null && s.nbRatings != null && s.nbRatings > 0 && (
+                            <span className="text-[10px] font-bold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">
+                              ⭐ {s.avgRating.toFixed(1)} ({s.nbRatings})
+                            </span>
+                          )}
                         </div>
 
                         <h2 className="font-bold text-slate-900 text-sm leading-snug line-clamp-1">{s.titre}</h2>

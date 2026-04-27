@@ -176,6 +176,8 @@ export async function GET(request: Request) {
         distanceKm: (f["distanceKm"] as number) ?? null,
         elevationGain: (f["elevationGain"] as number) ?? null,
         route_geometry: (f["route_geometry"] as string) ?? null,
+        avgRating: (f["avgRating"] as number) ?? null,
+        nbRatings: (f["nbRatings"] as number) ?? null,
       };
     }));
 
