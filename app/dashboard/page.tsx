@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useUser } from "@/context/UserContext";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -373,14 +373,150 @@ function SortieRow({ s, mine }: { s: Sortie; mine: boolean }) {
   );
 }
 
+// ─── Strava Section ───────────────────────────────────────────────────────────
+
+type SyncResult = { total: number; matched: number; validated: number };
+
+function StravaSection({ userId, userEmail }: { userId: string; userEmail: string }) {
+  const [connected,  setConnected]  = useState<boolean | null>(null);
+  const [syncing,    setSyncing]    = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncError,  setSyncError]  = useState("");
+
+  useEffect(() => {
+    fetch(`/api/strava/status?userId=${userId}`)
+      .then((r) => r.json())
+      .then((d) => setConnected(d.connected))
+      .catch(() => setConnected(false));
+  }, [userId]);
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncError("");
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/strava/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, userEmail }),
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const data: SyncResult = await res.json();
+      setSyncResult(data);
+    } catch (e) {
+      setSyncError((e as Error).message ?? "Erreur sync");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  if (connected === null) return null; // loading
+
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-3">
+        <h2 className="text-base font-semibold text-slate-700">🟠 Strava</h2>
+        {connected && (
+          <span className="text-[10px] font-bold bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">
+            Connecté
+          </span>
+        )}
+      </div>
+
+      {!connected ? (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col gap-3">
+          <div className="flex items-start gap-3">
+            <span className="text-3xl">🟠</span>
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Connecte ton compte Strava</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Tes activités Strava seront automatiquement associées à tes sorties RidePlanner et valideront tes participations.
+              </p>
+            </div>
+          </div>
+          <a
+            href={`/api/strava/auth?userId=${encodeURIComponent(userId)}&userEmail=${encodeURIComponent(userEmail)}`}
+            className="inline-flex items-center justify-center gap-2 bg-[#FC4C02] hover:bg-[#e04400] text-white text-sm font-bold px-5 py-2.5 rounded-xl transition-colors"
+          >
+            🔗 Connecter Strava
+          </a>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">✅</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-800">Compte Strava lié</p>
+              <p className="text-xs text-slate-500">Tes activités récentes seront associées à tes sorties.</p>
+            </div>
+            <a
+              href={`/api/strava/auth?userId=${encodeURIComponent(userId)}&userEmail=${encodeURIComponent(userEmail)}`}
+              className="text-xs text-slate-400 hover:text-slate-600 underline flex-shrink-0"
+            >
+              Reconnecter
+            </a>
+          </div>
+
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center justify-center gap-2 w-full bg-[#FC4C02] hover:bg-[#e04400] disabled:opacity-50 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-all active:scale-95"
+          >
+            {syncing ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Synchronisation…
+              </>
+            ) : (
+              "🔄 Synchroniser mes activités"
+            )}
+          </button>
+
+          {syncResult && (
+            <div className="bg-orange-50 border border-orange-100 rounded-xl px-4 py-3 text-sm">
+              <p className="font-semibold text-orange-800">Sync terminée ✅</p>
+              <ul className="mt-1 text-xs text-orange-700 space-y-0.5">
+                <li>• {syncResult.total} activité{syncResult.total > 1 ? "s" : ""} importée{syncResult.total > 1 ? "s" : ""}</li>
+                <li>• {syncResult.matched} associée{syncResult.matched > 1 ? "s" : ""} à une sortie</li>
+                {syncResult.validated > 0 && (
+                  <li className="font-semibold">• {syncResult.validated} sortie{syncResult.validated > 1 ? "s" : ""} auto-validée{syncResult.validated > 1 ? "s" : ""} 🎉</li>
+                )}
+              </ul>
+            </div>
+          )}
+
+          {syncError && (
+            <p className="text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">{syncError}</p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { user } = useUser();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [sorties,     setSorties]     = useState<Sortie[]>([]);
   const [validations, setValidations] = useState<Validation[]>([]);
   const [loading,     setLoading]     = useState(true);
+  const [stravaToast, setStravaToast] = useState<"connected" | "denied" | "error" | null>(null);
+
+  // Show Strava connection toast from redirect
+  useEffect(() => {
+    const s = searchParams.get("strava");
+    if (s === "connected" || s === "denied" || s === "error") {
+      setStravaToast(s as "connected" | "denied" | "error");
+      // Remove query param without reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete("strava");
+      window.history.replaceState({}, "", url.toString());
+      setTimeout(() => setStravaToast(null), 4000);
+    }
+  }, [searchParams]);
 
   const todayStr = today();
 
@@ -496,6 +632,19 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-2xl mx-auto px-4 py-8 flex flex-col gap-8">
+
+        {/* Strava toast */}
+        {stravaToast && (
+          <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-lg text-sm font-semibold transition-all ${
+            stravaToast === "connected" ? "bg-orange-500 text-white" :
+            stravaToast === "denied"   ? "bg-slate-600 text-white" :
+                                         "bg-red-500 text-white"
+          }`}>
+            {stravaToast === "connected" ? "🟠 Strava connecté avec succès !" :
+             stravaToast === "denied"   ? "Connexion Strava annulée" :
+                                          "Erreur lors de la connexion Strava"}
+          </div>
+        )}
 
         {/* Header */}
         <div>
@@ -634,6 +783,9 @@ export default function DashboardPage() {
                 )}
               </div>
             </section>
+
+            {/* ── Strava ── */}
+            <StravaSection userId={user.id} userEmail={user.email} />
 
             {/* ── À venir ── */}
             <section>
