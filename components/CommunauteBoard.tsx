@@ -498,10 +498,10 @@ function PostItCard({
 
 // ── Create form ────────────────────────────────────────────────────────────
 
-function CreateForm({ onCreated, onClose }: { onCreated: () => void; onClose: () => void }) {
+function CreateForm({ onCreated, onClose, defaultType = "cherche" }: { onCreated: () => void; onClose: () => void; defaultType?: "cherche" | "propose" }) {
   const { user } = useUser();
   const router = useRouter();
-  const [type, setType]           = useState<"cherche" | "propose">("cherche");
+  const [type, setType]           = useState<"cherche" | "propose">(defaultType);
   const [sport, setSport]         = useState("");
   const [message, setMessage]     = useState("");
   const [date, setDate]           = useState("");
@@ -604,12 +604,52 @@ function CreateForm({ onCreated, onClose }: { onCreated: () => void; onClose: ()
 
 const inputCls = "w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500";
 
+// ── Launch modal (choix entre cherche / propose) ───────────────────────────
+
+function LaunchModal({ onChoice, onClose }: { onChoice: (type: "cherche" | "propose") => void; onClose: () => void }) {
+  return (
+    <Modal onClose={onClose}>
+      <div className="flex flex-col gap-2 pb-1">
+        <h3 className="text-xl font-extrabold text-slate-900 text-center">Que veux-tu faire ?</h3>
+        <p className="text-sm text-slate-400 text-center mb-2">Choisis ton intention</p>
+      </div>
+      <div className="flex flex-col gap-3">
+        <button
+          onClick={() => onChoice("propose")}
+          className="group flex items-center gap-4 w-full rounded-2xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-400 px-5 py-5 transition-all active:scale-[0.98] text-left"
+        >
+          <span className="text-3xl">🚀</span>
+          <div>
+            <p className="text-base font-bold text-emerald-800">Je propose une sortie</p>
+            <p className="text-xs text-emerald-600 mt-0.5">Tu as une idée de sortie et cherches des participants</p>
+          </div>
+          <span className="ml-auto text-emerald-400 group-hover:translate-x-1 transition-transform text-lg">→</span>
+        </button>
+
+        <button
+          onClick={() => onChoice("cherche")}
+          className="group flex items-center gap-4 w-full rounded-2xl border-2 border-indigo-200 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-400 px-5 py-5 transition-all active:scale-[0.98] text-left"
+        >
+          <span className="text-3xl">🔍</span>
+          <div>
+            <p className="text-base font-bold text-indigo-800">Je cherche des partenaires</p>
+            <p className="text-xs text-indigo-600 mt-0.5">Tu veux trouver quelqu&apos;un avec qui pratiquer</p>
+          </div>
+          <span className="ml-auto text-indigo-400 group-hover:translate-x-1 transition-transform text-lg">→</span>
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function CommunauteBoard() {
   const [demandes, setDemandes]       = useState<Demande[]>([]);
   const [loading, setLoading]         = useState(true);
+  const [showLaunch, setShowLaunch]   = useState(false);
   const [showForm, setShowForm]       = useState(false);
+  const [defaultType, setDefaultType] = useState<"cherche" | "propose">("cherche");
   const [showAll, setShowAll]         = useState(false);
   const [selectedDemande, setSelected] = useState<Demande | null>(null);
   const { user } = useUser();
@@ -637,8 +677,14 @@ export default function CommunauteBoard() {
     setSelected(updated);
   }, []);
 
-  function handleCreate() {
+  function handleLaunch() {
     if (!user) { router.push("/login"); return; }
+    setShowLaunch(true);
+  }
+
+  function handleChoice(type: "cherche" | "propose") {
+    setDefaultType(type);
+    setShowLaunch(false);
     setShowForm(true);
   }
 
@@ -654,12 +700,12 @@ export default function CommunauteBoard() {
             <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
               🤝 Trouver ou organiser une sortie
             </h2>
-            <p className="text-sm text-slate-400 mt-1">Trouve des partenaires ou propose une sortie sportive</p>
+            <p className="text-sm text-slate-400 mt-1">Propose une sortie ou trouve des partenaires près de toi</p>
           </div>
           {!showForm && (
-            <button onClick={handleCreate}
-              className="flex items-center gap-2 text-sm font-semibold bg-slate-900 hover:bg-slate-700 text-white px-5 py-2.5 rounded-xl shadow-sm transition-all active:scale-[0.97] flex-shrink-0">
-              🎯 Publier mon intention
+            <button onClick={handleLaunch}
+              className="flex items-center gap-2 text-sm font-bold bg-slate-900 hover:bg-slate-700 text-white px-5 py-2.5 rounded-xl shadow-sm transition-all active:scale-[0.97] flex-shrink-0">
+              + Lancer une sortie
             </button>
           )}
         </div>
@@ -667,7 +713,7 @@ export default function CommunauteBoard() {
         {/* Create form */}
         {showForm && (
           <div className="mb-7 max-w-xl">
-            <CreateForm onCreated={loadDemandes} onClose={() => setShowForm(false)} />
+            <CreateForm defaultType={defaultType} onCreated={loadDemandes} onClose={() => setShowForm(false)} />
           </div>
         )}
 
@@ -691,9 +737,9 @@ export default function CommunauteBoard() {
             <p className="text-4xl mb-3">🎯</p>
             <p className="font-semibold text-slate-600">Aucune intention publiée pour l&apos;instant</p>
             <p className="text-sm text-slate-400 mt-1">Sois le premier à chercher ou proposer une sortie !</p>
-            <button onClick={handleCreate}
-              className="mt-4 text-sm font-semibold bg-slate-900 hover:bg-slate-700 text-white px-5 py-2 rounded-xl shadow-sm transition-all">
-              Publier mon intention →
+            <button onClick={handleLaunch}
+              className="mt-4 text-sm font-bold bg-slate-900 hover:bg-slate-700 text-white px-5 py-2 rounded-xl shadow-sm transition-all">
+              + Lancer une sortie →
             </button>
           </div>
         )}
@@ -722,6 +768,11 @@ export default function CommunauteBoard() {
           </div>
         )}
       </div>
+
+      {/* Launch modal */}
+      {showLaunch && (
+        <LaunchModal onChoice={handleChoice} onClose={() => setShowLaunch(false)} />
+      )}
 
       {/* Modal */}
       {selectedDemande && (
