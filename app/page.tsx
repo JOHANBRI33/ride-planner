@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import _dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -144,6 +144,9 @@ export default function Home() {
   const [joinToast, setJoinToast] = useState("");
   const [activityToast, setActivityToast] = useState("");
   const [activityVisible, setActivityVisible] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [communauteAutoOpen, setCommunauteAutoOpen] = useState<"cherche" | "propose" | null>(null);
+  const communauteSectionRef = useRef<HTMLDivElement>(null);
   const [showMapFor, setShowMapFor] = useState<Set<string>>(new Set());
   const [hoveredSortie, setHoveredSortie] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
@@ -295,7 +298,7 @@ export default function Home() {
           {/* Boutons */}
           <div className="fade-in flex flex-col sm:flex-row gap-3 w-full sm:w-auto sm:justify-center">
             <button
-              onClick={() => requireProfile(() => router.push("/create"))}
+              onClick={() => requireProfile(() => setShowCreateModal(true))}
               className="w-full sm:w-auto min-h-[48px] bg-blue-600 hover:bg-blue-700 hover:scale-[1.04] active:scale-[0.98] text-white font-semibold px-7 py-3.5 rounded-2xl transition-all duration-200 shadow-md hover:shadow-lg text-sm"
             >
               + Créer une sortie
@@ -602,7 +605,9 @@ export default function Home() {
       </div>{/* end max-w-7xl */}
 
       {/* ── Communauté / annonces ── */}
-      <CommunauteBoard />
+      <div ref={communauteSectionRef}>
+        <CommunauteBoard autoOpen={communauteAutoOpen} onAutoOpenDone={() => setCommunauteAutoOpen(null)} />
+      </div>
 
       {/* ── Section marketing ── */}
       <section className="bg-white border-t border-b border-slate-100">
@@ -651,6 +656,53 @@ export default function Home() {
           {activityToast}
         </div>
       </div>
+
+      {/* ── Modal choix création ── */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setShowCreateModal(false)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 flex flex-col gap-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button onClick={() => setShowCreateModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+            <div className="text-center pb-1">
+              <h3 className="text-xl font-extrabold text-slate-900">Que veux-tu faire ?</h3>
+              <p className="text-sm text-slate-400 mt-1">Choisis ton intention</p>
+            </div>
+            <div className="flex flex-col gap-3">
+              {/* Propose */}
+              <button
+                onClick={() => { setShowCreateModal(false); requireProfile(() => router.push("/create")); }}
+                className="group flex items-center gap-4 w-full rounded-2xl border-2 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-400 px-5 py-5 transition-all active:scale-[0.98] text-left"
+              >
+                <span className="text-3xl">🚀</span>
+                <div className="flex-1">
+                  <p className="text-base font-bold text-emerald-800">Je propose une sortie</p>
+                  <p className="text-xs text-emerald-600 mt-0.5">Tu as une idée et cherches des participants</p>
+                </div>
+                <span className="text-emerald-400 group-hover:translate-x-1 transition-transform text-lg">→</span>
+              </button>
+              {/* Cherche */}
+              <button
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setCommunauteAutoOpen("cherche");
+                  setTimeout(() => communauteSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+                }}
+                className="group flex items-center gap-4 w-full rounded-2xl border-2 border-indigo-200 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-400 px-5 py-5 transition-all active:scale-[0.98] text-left"
+              >
+                <span className="text-3xl">🔍</span>
+                <div className="flex-1">
+                  <p className="text-base font-bold text-indigo-800">Je cherche des partenaires</p>
+                  <p className="text-xs text-indigo-600 mt-0.5">Tu veux trouver quelqu&apos;un avec qui pratiquer</p>
+                </div>
+                <span className="text-indigo-400 group-hover:translate-x-1 transition-transform text-lg">→</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Toast join success (bas-centre) ── */}
       <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 transition-all duration-500 ${
