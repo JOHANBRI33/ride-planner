@@ -3,36 +3,42 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { getRoute } from "@/lib/mapbox/routeService";
-import type { TravelMode } from "@/lib/mapbox/directions";
+import { getSegment, MAPBOX_PROFILE, type TravelMode } from "@/lib/mapbox/directions";
 import type { GPXData } from "@/lib/gpx/parseGPX";
-
-type ExtendedMode = TravelMode | "swimming";
 import {
   sampleGeometry,
   calculateElevationProfile,
   getDifficulty,
   buildSlopeGeoJSON,
   buildPlainGeoJSON,
+  haversine,
   type StoredRoute,
   type SlopeSegment,
 } from "@/lib/elevation/elevationService";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Coords = { lat: number; lng: number };
+type ExtendedMode = "cycling" | "walking" | "swimming";
 type Point = [number, number]; // [lng, lat]
 
+type Segment = {
+  from:        Point;
+  to:          Point;
+  geometry:    Point[];   // road-following geometry from Directions API
+  distanceKm:  number;
+  durationMin: number;
+};
+
 type Props = {
-  onLocationChange: (coords: Coords, adresse?: string) => void;
-  onRouteChange: (points: Point[], storedRoute?: StoredRoute) => void;
-  height?: string;
-  initialGpx?: GPXData | null;
+  onLocationChange: (coords: { lat: number; lng: number }, adresse?: string) => void;
+  onRouteChange:    (points: Point[], storedRoute?: StoredRoute) => void;
+  height?:          string;
+  initialGpx?:      GPXData | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_CENTER: [number, number] = [-0.5792, 44.8378];
+const DEFAULT_CENTER: Point = [-0.5792, 44.8378];
 
 const TRAVEL_MODES: { value: ExtendedMode; label: string; emoji: string }[] = [
   { value: "cycling",  label: "Vélo",          emoji: "🚴" },
@@ -41,8 +47,8 @@ const TRAVEL_MODES: { value: ExtendedMode; label: string; emoji: string }[] = [
 ];
 
 const LEGEND = [
-  { color: "#10b981", label: "0–3 %" },
-  { color: "#eab308", label: "3–6 %" },
+  { color: "#10b981", label: "0–3 %"  },
+  { color: "#eab308", label: "3–6 %"  },
   { color: "#f97316", label: "6–10 %" },
   { color: "#ef4444", label: "> 10 %" },
 ];
@@ -50,11 +56,7 @@ const LEGEND = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function haversineKm(a: Point, b: Point): number {
-  const R = 6371;
-  const dLat = (b[1] - a[1]) * Math.PI / 180;
-  const dLng = (b[0] - a[0]) * Math.PI / 180;
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * Math.PI / 180) * Math.cos(b[1] * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return haversine(a, b) / 1000;
 }
 
 function straightLineKm(pts: Point[]): number {
@@ -65,7 +67,7 @@ function straightLineKm(pts: Point[]): number {
 
 function computeBounds(coords: Point[]): mapboxgl.LngLatBoundsLike {
   const lngs = coords.map((p) => p[0]);
-  const lats = coords.map((p) => p[1]);
+  const lats  = coords.map((p) => p[1]);
   return [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]];
 }
 
@@ -80,94 +82,130 @@ async function reverseGeocode(lng: number, lat: number): Promise<string | undefi
   } catch { return undefined; }
 }
 
-/**
- * Query terrain elevation for a set of points.
- * Returns null if terrain data isn't loaded yet (all zeros = no DEM).
- */
-function queryElevations(map: mapboxgl.Map, coords: Point[]): number[] | null {
-  const sampled = sampleGeometry(coords, 150);
-  const elevs = sampled.map(([lng, lat]) => {
-    const v = (map as mapboxgl.Map & { queryTerrainElevation?: (lngLat: [number, number], opts?: { exaggerated: boolean }) => number | null })
-      .queryTerrainElevation?.([lng, lat], { exaggerated: false });
-    return v ?? 0;
-  });
-  // Check if we got meaningful data (not all zeros)
-  const hasData = elevs.some((e) => e > 1);
-  return hasData ? elevs : null;
+/** Concatène les géométries des segments en évitant les points de jonction doublons. */
+function joinGeometries(segments: Segment[]): Point[] {
+  return segments.reduce<Point[]>((acc, seg, i) => {
+    return acc.concat(i === 0 ? seg.geometry : seg.geometry.slice(1));
+  }, []);
 }
 
-/** Source + layers for the route. Uses FeatureCollection so color is data-driven. */
+/** Construit un segment en ligne droite (fallback / natation). */
+function straightSegment(from: Point, to: Point): Segment {
+  return {
+    from, to,
+    geometry:    [from, to],
+    distanceKm:  Math.round(haversineKm(from, to) * 100) / 100,
+    durationMin: 0,
+  };
+}
+
+/** Attend que queryTerrainElevation retourne des données non-nulles pour au moins un point test. */
+async function waitForTerrain(
+  map:       mapboxgl.Map,
+  testPoint: Point,
+  maxMs    = 4000,
+): Promise<boolean> {
+  const step = 200;
+  const queryMap = map as mapboxgl.Map & {
+    queryTerrainElevation?: (p: mapboxgl.LngLatLike, opts?: { exaggerated: boolean }) => number | null;
+  };
+  for (let elapsed = 0; elapsed < maxMs; elapsed += step) {
+    const e = queryMap.queryTerrainElevation?.([testPoint[0], testPoint[1]], { exaggerated: false });
+    if (e !== null && e !== undefined && Math.abs(e) > 0.5) return true;
+    await new Promise((r) => setTimeout(r, step));
+  }
+  return false;
+}
+
+/** Query élévations pour une liste de points. */
+function queryElevations(map: mapboxgl.Map, coords: Point[]): number[] {
+  const queryMap = map as mapboxgl.Map & {
+    queryTerrainElevation?: (p: mapboxgl.LngLatLike, opts?: { exaggerated: boolean }) => number | null;
+  };
+  return coords.map(([lng, lat]) => {
+    return queryMap.queryTerrainElevation?.([lng, lat], { exaggerated: false }) ?? 0;
+  });
+}
+
+// ─── Map source helpers ───────────────────────────────────────────────────────
+
 function initRouteSources(map: mapboxgl.Map) {
-  const emptyFC = buildPlainGeoJSON([]);
+  const empty = buildPlainGeoJSON([]);
 
-  map.addSource("route", { type: "geojson", data: emptyFC });
-  // Glow layer (always green for softness)
+  map.addSource("route", { type: "geojson", data: empty });
+  // Glow
   map.addLayer({
-    id: "route-glow",
-    type: "line",
-    source: "route",
-    paint: { "line-color": "#10b981", "line-width": 10, "line-opacity": 0.15, "line-blur": 6 },
+    id: "route-glow", type: "line", source: "route",
+    paint: { "line-color": "#10b981", "line-width": 10, "line-opacity": 0.12, "line-blur": 6 },
     layout: { "line-join": "round", "line-cap": "round" },
   });
-  // Main colored line
+  // Main colored line (data-driven by "color" property)
   map.addLayer({
-    id: "route-line",
-    type: "line",
-    source: "route",
-    paint: {
-      "line-color": ["get", "color"],
-      "line-width": 4,
-      "line-opacity": 0.92,
-    },
+    id: "route-line", type: "line", source: "route",
+    paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": 0.93 },
     layout: { "line-join": "round", "line-cap": "round" },
   });
 
-  // Dashed preview (between waypoints while calculating)
+  // Dashed preview while calculating next segment
   map.addSource("route-preview", {
     type: "geojson",
     data: { type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} },
   });
   map.addLayer({
-    id: "route-preview-line",
-    type: "line",
-    source: "route-preview",
-    paint: { "line-color": "#10b981", "line-width": 2, "line-opacity": 0.4, "line-dasharray": [2, 2] },
+    id: "route-preview-line", type: "line", source: "route-preview",
+    paint: { "line-color": "#10b981", "line-width": 2, "line-opacity": 0.45, "line-dasharray": [2, 2] },
     layout: { "line-join": "round", "line-cap": "round" },
   });
 }
 
+function setRouteData(map: mapboxgl.Map, data: object) {
+  (map.getSource("route") as mapboxgl.GeoJSONSource | undefined)
+    ?.setData(data as Parameters<mapboxgl.GeoJSONSource["setData"]>[0]);
+}
+
+function setPreviewData(map: mapboxgl.Map, coords: Point[]) {
+  (map.getSource("route-preview") as mapboxgl.GeoJSONSource | undefined)
+    ?.setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} });
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function RoutePickerMap({ onLocationChange, onRouteChange, height = "320px", initialGpx }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const mapLoadedRef = useRef(false);
-  const locationMarkerRef = useRef<mapboxgl.Marker | null>(null);
-  const routeMarkersRef = useRef<mapboxgl.Marker[]>([]);
-  const routePointsRef = useRef<Point[]>([]);
-  const modeRef = useRef<"location" | "route">("location");
-  const travelModeRef = useRef<ExtendedMode>("cycling");
+export default function RoutePickerMap({
+  onLocationChange, onRouteChange, height = "320px", initialGpx,
+}: Props) {
+  const containerRef        = useRef<HTMLDivElement>(null);
+  const mapRef              = useRef<mapboxgl.Map | null>(null);
+  const mapLoadedRef        = useRef(false);
+  const locationMarkerRef   = useRef<mapboxgl.Marker | null>(null);
+  const waypointMarkersRef  = useRef<mapboxgl.Marker[]>([]);  // one per user-clicked waypoint
+  const waypointsRef        = useRef<Point[]>([]);            // user-clicked points
+  const segmentsRef         = useRef<Segment[]>([]);          // completed routed segments
+  const modeRef             = useRef<"location" | "route">("location");
+  const travelModeRef       = useRef<ExtendedMode>("cycling");
+  const routingRef          = useRef(false);                  // prevent overlapping fetches
 
-  const [mode, setMode] = useState<"location" | "route">("location");
-  const [travelMode, setTravelMode] = useState<ExtendedMode>("cycling");
-  const [locating, setLocating] = useState(false);
+  const [mode,           setMode]           = useState<"location" | "route">("location");
+  const [travelMode,     setTravelMode]     = useState<ExtendedMode>("cycling");
+  const [locating,       setLocating]       = useState(false);
   const [locationPicked, setLocationPicked] = useState(false);
-  const [routePoints, setRoutePoints] = useState<Point[]>([]);
-  const [loadingRoute, setLoadingRoute] = useState(false);
-  const [loadingElevation, setLoadingElevation] = useState(false);
+  const [waypoints,      setWaypoints]      = useState<Point[]>([]);
+  const [loadingRoute,   setLoadingRoute]   = useState(false);
+  const [loadingElev,    setLoadingElev]    = useState(false);
   const [routeInfo, setRouteInfo] = useState<{
-    distanceKm: number;
+    distanceKm:  number;
     durationMin: number;
-    gain?: number;
-    loss?: number;
-    slopes?: SlopeSegment[];
+    gain?:       number;
+    loss?:       number;
+    slopes?:     SlopeSegment[];
   } | null>(null);
   const [showLegend, setShowLegend] = useState(false);
+  const [routeError, setRouteError] = useState("");
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { travelModeRef.current = travelMode; }, [travelMode]);
 
-  // ── Charger un GPX importé ──────────────────────────────────────────────
+  // ── GPX import ─────────────────────────────────────────────────────────────
+
   useEffect(() => {
     if (!initialGpx) return;
 
@@ -175,43 +213,33 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
       const map = mapRef.current;
       if (!map || !initialGpx) return;
 
-      // Nettoyer tracé précédent
-      routeMarkersRef.current.forEach((m) => m.remove());
-      routeMarkersRef.current = [];
-      routePointsRef.current = initialGpx.coordinates;
-      setRoutePoints(initialGpx.coordinates);
+      clearAllMarkers();
+      waypointsRef.current = initialGpx.coordinates;
+      segmentsRef.current  = [];
+      setWaypoints(initialGpx.coordinates);
       setRouteInfo({ distanceKm: initialGpx.distanceKm, durationMin: 0, gain: initialGpx.elevationGain });
       setMode("route");
 
-      // Afficher la ligne GPX
-      updateRouteSource(map, buildPlainGeoJSON(initialGpx.coordinates));
+      setRouteData(map, buildPlainGeoJSON(initialGpx.coordinates));
 
-      // Marqueur de départ
       const [startLng, startLat] = initialGpx.coordinates[0];
-      const el = document.createElement("div");
-      el.className = "w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow";
-      routeMarkersRef.current.push(new mapboxgl.Marker({ element: el }).setLngLat([startLng, startLat]).addTo(map));
+      addWaypointMarker(map, [startLng, startLat], true);
 
-      // Auto-zoom
       map.fitBounds(computeBounds(initialGpx.coordinates), { padding: 60, maxZoom: 15, duration: 800 });
 
-      // Notifier le parent
       onRouteChange(initialGpx.coordinates, {
         v: 2,
-        geometry: initialGpx.coordinates,
-        distanceKm: initialGpx.distanceKm,
+        geometry:    initialGpx.coordinates,
+        distanceKm:  initialGpx.distanceKm,
         durationMin: 0,
-        gain: initialGpx.elevationGain,
-        loss: 0,
-        slopes: [],
+        gain:        initialGpx.elevationGain,
+        loss:        0,
+        slopes:      [],
       });
     }
 
-    if (mapLoadedRef.current) {
-      applyGpx();
-    } else {
-      mapRef.current?.once("load", applyGpx);
-    }
+    if (mapLoadedRef.current) applyGpx();
+    else mapRef.current?.once("load", applyGpx);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialGpx]);
 
@@ -222,22 +250,22 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
     mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
     const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: "mapbox://styles/mapbox/outdoors-v12", // shows terrain naturally
-      center: DEFAULT_CENTER,
-      zoom: 11,
+      container:  containerRef.current,
+      style:      "mapbox://styles/mapbox/outdoors-v12",
+      center:     DEFAULT_CENTER,
+      zoom:       11,
     });
     map.addControl(new mapboxgl.NavigationControl(), "top-right");
     mapRef.current = map;
 
     map.on("load", () => {
       mapLoadedRef.current = true;
-      // Terrain DEM — required for queryTerrainElevation
+
+      // Terrain DEM pour queryTerrainElevation
       map.addSource("mapbox-dem", {
         type: "raster-dem",
-        url: "mapbox://mapbox.mapbox-terrain-dem-v1",
-        tileSize: 512,
-        maxzoom: 14,
+        url:  "mapbox://mapbox.mapbox-terrain-dem-v1",
+        tileSize: 512, maxzoom: 14,
       });
       map.setTerrain({ source: "mapbox-dem", exaggeration: 1 });
 
@@ -251,13 +279,46 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
         const adresse = await reverseGeocode(lng, lat);
         onLocationChange({ lat, lng }, adresse);
       } else {
-        await addRoutePoint(map, [lng, lat]);
+        await addWaypoint(map, [lng, lat]);
       }
     });
 
-    return () => map.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Live preview: dashed line from last waypoint to cursor
+    map.on("mousemove", (e) => {
+      if (modeRef.current !== "route") return;
+      const pts = waypointsRef.current;
+      if (pts.length === 0) return;
+      const last = pts[pts.length - 1];
+      setPreviewData(map, [last, [e.lngLat.lng, e.lngLat.lat]]);
+    });
+
+    map.on("mouseleave", () => setPreviewData(map, []));
+
+    return () => { map.remove(); mapRef.current = null; mapLoadedRef.current = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Marker helpers ──────────────────────────────────────────────────────────
+
+  function addWaypointMarker(map: mapboxgl.Map, point: Point, isStart = false) {
+    const el = document.createElement("div");
+    el.className = [
+      "rounded-full border-2 border-white shadow",
+      isStart
+        ? "w-4 h-4 bg-emerald-500"   // start: bigger green
+        : "w-3 h-3 bg-blue-500",     // via point: smaller blue
+    ].join(" ");
+    const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
+      .setLngLat(point)
+      .addTo(map);
+    waypointMarkersRef.current.push(marker);
+    return marker;
+  }
+
+  function clearAllMarkers() {
+    waypointMarkersRef.current.forEach((m) => m.remove());
+    waypointMarkersRef.current = [];
+  }
 
   // ── Location marker ─────────────────────────────────────────────────────────
 
@@ -272,141 +333,228 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
     setLocationPicked(true);
   }
 
-  // ── Route management ────────────────────────────────────────────────────────
+  // ── Core: add waypoint + route segment ─────────────────────────────────────
 
-  async function addRoutePoint(map: mapboxgl.Map, point: Point) {
-    const el = document.createElement("div");
-    el.className = "w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow";
-    const marker = new mapboxgl.Marker({ element: el }).setLngLat(point).addTo(map);
-    routeMarkersRef.current.push(marker);
+  async function addWaypoint(map: mapboxgl.Map, point: Point) {
+    if (routingRef.current) return; // prevent overlapping requests
 
-    const newPoints = [...routePointsRef.current, point];
-    routePointsRef.current = newPoints;
-    setRoutePoints(newPoints);
+    const isStart = waypointsRef.current.length === 0;
+    addWaypointMarker(map, point, isStart);
 
-    updatePreviewLine(map, newPoints);
+    const newWaypoints = [...waypointsRef.current, point];
+    waypointsRef.current = newWaypoints;
+    setWaypoints(newWaypoints);
+    setRouteError("");
 
-    if (newPoints.length >= 2) {
-      await refreshDirections(map, newPoints);
-    } else {
-      onRouteChange(newPoints);
-    }
-  }
-
-  async function refreshDirections(
-    map: mapboxgl.Map,
-    points: Point[],
-    forcedMode?: ExtendedMode,
-  ) {
-    const activeMode = forcedMode ?? travelModeRef.current;
-
-    // Natation: straight lines only, no routing API
-    if (activeMode === "swimming") {
-      updateRouteSource(map, buildPlainGeoJSON(points));
-      clearPreviewLine(map);
-      if (points.length >= 2) {
-        map.fitBounds(computeBounds(points), { padding: 60, maxZoom: 15, duration: 800 });
-      }
-      onRouteChange(points, { v: 2, geometry: points, distanceKm: straightLineKm(points), durationMin: 0 });
+    if (newWaypoints.length < 2) {
+      onRouteChange(newWaypoints);
       return;
     }
 
+    // ── Route the new segment (prev → new) ──────────────────────────────────
+    const from = newWaypoints[newWaypoints.length - 2];
+    const to   = point;
+
+    routingRef.current = true;
     setLoadingRoute(true);
-    const result = await getRoute(points, activeMode as TravelMode);
-    setLoadingRoute(false);
 
-    if (!result) {
-      // Fallback: straight lines
-      updateRouteSource(map, buildPlainGeoJSON(points));
-      onRouteChange(points);
-      return;
+    let segment: Segment;
+
+    if (travelModeRef.current === "swimming") {
+      segment = straightSegment(from, to);
+    } else {
+      const mapboxMode = MAPBOX_PROFILE[travelModeRef.current] as TravelMode;
+      const result = await getSegment(from, to, mapboxMode);
+
+      if (!result) {
+        // Fallback straight line + error notice
+        segment = straightSegment(from, to);
+        setRouteError("Itinéraire routier introuvable — tracé approximatif");
+      } else {
+        segment = { from, to, ...result };
+      }
     }
 
-    const { geometry, distanceKm, durationMin } = result;
+    segmentsRef.current = [...segmentsRef.current, segment];
+    setLoadingRoute(false);
+    routingRef.current = false;
 
-    // Show plain green route immediately while elevation loads
-    updateRouteSource(map, buildPlainGeoJSON(geometry));
-    clearPreviewLine(map);
+    // ── Display joined geometry ──────────────────────────────────────────────
+    const fullGeometry = joinGeometries(segmentsRef.current);
+    const totalDist    = segmentsRef.current.reduce((s, seg) => s + seg.distanceKm, 0);
+    const totalDur     = segmentsRef.current.reduce((s, seg) => s + seg.durationMin, 0);
 
-    // Fit map to route — terrain tiles for this area will load
-    map.fitBounds(computeBounds(geometry), {
+    // Show plain green immediately
+    setRouteData(map, buildPlainGeoJSON(fullGeometry));
+
+    // Fit map to include new segment
+    map.fitBounds(computeBounds(fullGeometry), {
       padding: { top: 50, bottom: 50, left: 40, right: 40 },
-      maxZoom: 15,
-      duration: 800,
+      maxZoom: 15, duration: 600,
     });
 
-    // After the map is idle (tiles loaded), query terrain elevations
-    setLoadingElevation(true);
-    map.once("idle", () => {
-      const elevs = queryElevations(map, geometry);
+    // ── Elevation (wait for DEM tiles after fitBounds) ──────────────────────
+    setLoadingElev(true);
 
-      if (elevs) {
-        const sampled = sampleGeometry(geometry, 150);
-        const profile = calculateElevationProfile(sampled, elevs);
-        updateRouteSource(map, buildSlopeGeoJSON(profile.slopes));
-        setRouteInfo({ distanceKm, durationMin, gain: profile.gain, loss: profile.loss, slopes: profile.slopes });
-        onRouteChange(points, {
-          v: 2,
-          geometry,
-          distanceKm,
-          durationMin,
-          gain: profile.gain,
-          loss: profile.loss,
-          slopes: profile.slopes,
-        });
-      } else {
-        setRouteInfo({ distanceKm, durationMin });
-        onRouteChange(points, { v: 2, geometry, distanceKm, durationMin });
-      }
-      setLoadingElevation(false);
+    // Wait for map to be idle after the flyTo
+    await new Promise<void>((resolve) => {
+      map.once("idle", () => resolve());
+      setTimeout(resolve, 2000); // safety timeout
     });
+
+    // Additional wait for terrain DEM tiles to load
+    const midPoint = fullGeometry[Math.floor(fullGeometry.length / 2)];
+    const hasTerrain = await waitForTerrain(map, midPoint, 3000);
+
+    if (hasTerrain) {
+      const sampled  = sampleGeometry(fullGeometry, 150);
+      const elevs    = queryElevations(map, sampled);
+      const profile  = calculateElevationProfile(sampled, elevs);
+      const slopes   = profile.gain > 0 ? profile.slopes : [];
+
+      setRouteData(map, slopes.length > 0 ? buildSlopeGeoJSON(slopes) : buildPlainGeoJSON(fullGeometry));
+      setRouteInfo({ distanceKm: Math.round(totalDist * 100) / 100, durationMin: totalDur, ...profile });
+
+      onRouteChange(newWaypoints, {
+        v: 2, geometry: fullGeometry,
+        distanceKm:  Math.round(totalDist * 100) / 100,
+        durationMin: totalDur,
+        gain: profile.gain,
+        loss: profile.loss,
+        slopes,
+      });
+    } else {
+      setRouteInfo({ distanceKm: Math.round(totalDist * 100) / 100, durationMin: totalDur });
+      onRouteChange(newWaypoints, {
+        v: 2, geometry: fullGeometry,
+        distanceKm:  Math.round(totalDist * 100) / 100,
+        durationMin: totalDur,
+      });
+    }
+
+    setLoadingElev(false);
   }
 
-  function updateRouteSource(map: mapboxgl.Map, data: object) {
-    const src = map.getSource("route") as mapboxgl.GeoJSONSource | undefined;
-    src?.setData(data as Parameters<mapboxgl.GeoJSONSource["setData"]>[0]);
+  // ── Mode change: re-route all segments ─────────────────────────────────────
+
+  async function changeTravelMode(newMode: ExtendedMode) {
+    setTravelMode(newMode);
+    travelModeRef.current = newMode;
+    const map = mapRef.current;
+    const pts = waypointsRef.current;
+    if (!map || pts.length < 2) return;
+
+    routingRef.current = true;
+    setLoadingRoute(true);
+    setRouteError("");
+
+    const mapboxMode = MAPBOX_PROFILE[newMode] as TravelMode;
+
+    const newSegments: Segment[] = await Promise.all(
+      pts.slice(0, -1).map(async (from, i) => {
+        const to = pts[i + 1];
+        if (newMode === "swimming") return straightSegment(from, to);
+        const result = await getSegment(from, to, mapboxMode);
+        return result ? { from, to, ...result } : straightSegment(from, to);
+      })
+    );
+
+    segmentsRef.current = newSegments;
+    setLoadingRoute(false);
+    routingRef.current = false;
+
+    const fullGeometry = joinGeometries(newSegments);
+    const totalDist    = newSegments.reduce((s, seg) => s + seg.distanceKm, 0);
+    const totalDur     = newSegments.reduce((s, seg) => s + seg.durationMin, 0);
+
+    setRouteData(map, buildPlainGeoJSON(fullGeometry));
+    setRouteInfo({ distanceKm: Math.round(totalDist * 100) / 100, durationMin: totalDur });
+
+    // Re-query elevation
+    setLoadingElev(true);
+    await new Promise<void>((resolve) => { map.once("idle", () => resolve()); setTimeout(resolve, 2000); });
+    const mid = fullGeometry[Math.floor(fullGeometry.length / 2)];
+    const hasTerrain = await waitForTerrain(map, mid, 3000);
+
+    if (hasTerrain) {
+      const sampled = sampleGeometry(fullGeometry, 150);
+      const elevs   = queryElevations(map, sampled);
+      const profile = calculateElevationProfile(sampled, elevs);
+      const slopes  = profile.gain > 0 ? profile.slopes : [];
+      setRouteData(map, slopes.length > 0 ? buildSlopeGeoJSON(slopes) : buildPlainGeoJSON(fullGeometry));
+      setRouteInfo({ distanceKm: Math.round(totalDist * 100) / 100, durationMin: totalDur, ...profile });
+    }
+    setLoadingElev(false);
   }
 
-  function updatePreviewLine(map: mapboxgl.Map, coords: Point[]) {
-    const src = map.getSource("route-preview") as mapboxgl.GeoJSONSource | undefined;
-    src?.setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} });
-  }
-
-  function clearPreviewLine(map: mapboxgl.Map) {
-    updatePreviewLine(map, []);
-  }
+  // ── Clear ───────────────────────────────────────────────────────────────────
 
   function clearRoute() {
-    routeMarkersRef.current.forEach((m) => m.remove());
-    routeMarkersRef.current = [];
-    routePointsRef.current = [];
-    setRoutePoints([]);
+    clearAllMarkers();
+    waypointsRef.current = [];
+    segmentsRef.current  = [];
+    setWaypoints([]);
     setRouteInfo(null);
     setShowLegend(false);
+    setRouteError("");
     const map = mapRef.current;
     if (map) {
-      updateRouteSource(map, buildPlainGeoJSON([]));
-      clearPreviewLine(map);
+      setRouteData(map, buildPlainGeoJSON([]));
+      setPreviewData(map, []);
     }
     onRouteChange([]);
   }
 
+  // ── Close loop ──────────────────────────────────────────────────────────────
+
   async function closeLoop() {
-    const points = routePointsRef.current;
-    if (points.length < 2) return;
+    const pts = waypointsRef.current;
     const map = mapRef.current;
-    if (!map) return;
-    await addRoutePoint(map, points[0]);
+    if (pts.length < 2 || !map) return;
+    await addWaypoint(map, pts[0]);
   }
 
-  async function changeTravelMode(newMode: ExtendedMode) {
-    setTravelMode(newMode);
+  // ── Undo last point ─────────────────────────────────────────────────────────
+
+  function undoLast() {
+    const pts = waypointsRef.current;
+    if (pts.length === 0) return;
+
+    // Remove last waypoint marker
+    const lastMarker = waypointMarkersRef.current.pop();
+    lastMarker?.remove();
+
+    const newWaypoints = pts.slice(0, -1);
+    waypointsRef.current = newWaypoints;
+    setWaypoints(newWaypoints);
+
+    const newSegments = segmentsRef.current.slice(0, -1);
+    segmentsRef.current = newSegments;
+    setRouteError("");
+
     const map = mapRef.current;
-    const points = routePointsRef.current;
-    if (map && points.length >= 2) {
-      await refreshDirections(map, points, newMode);
+    if (!map) return;
+
+    if (newSegments.length === 0) {
+      setRouteData(map, buildPlainGeoJSON([]));
+      setRouteInfo(null);
+      onRouteChange([]);
+      return;
     }
+
+    const fullGeometry = joinGeometries(newSegments);
+    const totalDist    = newSegments.reduce((s, seg) => s + seg.distanceKm, 0);
+    const totalDur     = newSegments.reduce((s, seg) => s + seg.durationMin, 0);
+
+    setRouteData(map, buildPlainGeoJSON(fullGeometry));
+    setRouteInfo({ distanceKm: Math.round(totalDist * 100) / 100, durationMin: totalDur });
+    onRouteChange(newWaypoints, {
+      v: 2, geometry: fullGeometry,
+      distanceKm: Math.round(totalDist * 100) / 100, durationMin: totalDur,
+    });
   }
+
+  // ── Geolocation ─────────────────────────────────────────────────────────────
 
   async function geolocate() {
     if (!navigator.geolocation) return;
@@ -426,16 +574,17 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
     );
   }
 
-  // ─── Derived state ────────────────────────────────────────────────────────
+  // ── Derived ─────────────────────────────────────────────────────────────────
 
   const difficulty = routeInfo?.gain != null && routeInfo.gain > 0
     ? getDifficulty(routeInfo.gain, routeInfo.distanceKm ?? 0)
     : null;
 
-  const isLoading = loadingRoute || loadingElevation;
-  const hasSlopes = (routeInfo?.slopes?.length ?? 0) > 0;
+  const isLoading  = loadingRoute || loadingElev;
+  const hasSlopes  = (routeInfo?.slopes?.length ?? 0) > 0;
+  const totalDist  = segmentsRef.current.reduce((s, seg) => s + seg.distanceKm, 0);
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col gap-2">
@@ -443,13 +592,13 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
       {/* ── Mode tabs ── */}
       <div className="flex gap-2 flex-wrap">
         <button type="button" onClick={() => setMode("location")}
-          className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all duration-200 ${
+          className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all ${
             mode === "location" ? "bg-blue-600 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
           }`}>
           📍 Point RDV
         </button>
         <button type="button" onClick={() => setMode("route")}
-          className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all duration-200 ${
+          className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all ${
             mode === "route" ? "bg-emerald-600 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
           }`}>
           🗺️ Tracer le parcours
@@ -462,12 +611,12 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
         )}
       </div>
 
-      {/* ── Transport mode (route tab only) ── */}
+      {/* ── Mode de transport (route seulement) ── */}
       {mode === "route" && (
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 flex-wrap">
           {TRAVEL_MODES.map((m) => (
             <button key={m.value} type="button" onClick={() => changeTravelMode(m.value)}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all duration-200 ${
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
                 travelMode === m.value
                   ? "bg-slate-800 text-white shadow-sm"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -475,6 +624,12 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
               <span>{m.emoji}</span>{m.label}
             </button>
           ))}
+          {mode === "route" && waypoints.length > 0 && (
+            <span className="ml-auto text-xs text-slate-400 self-center">
+              {waypoints.length} point{waypoints.length > 1 ? "s" : ""}
+              {totalDist > 0 ? ` · ${(totalDist).toFixed(1)} km` : ""}
+            </span>
+          )}
         </div>
       )}
 
@@ -482,20 +637,15 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
       <div className="relative">
         <div ref={containerRef} style={{ height }} className="w-full rounded-xl overflow-hidden border border-gray-200" />
 
-        {/* Legend toggle button (only when slopes exist) */}
+        {/* Légende pentes */}
         {mode === "route" && hasSlopes && (
-          <button
-            type="button"
-            onClick={() => setShowLegend((v) => !v)}
-            className="absolute bottom-3 left-3 z-10 bg-white/90 backdrop-blur-sm text-xs font-semibold px-2.5 py-1.5 rounded-lg shadow border border-slate-200 text-slate-600 hover:bg-white transition-colors"
-          >
+          <button type="button" onClick={() => setShowLegend((v) => !v)}
+            className="absolute bottom-3 left-3 z-10 bg-white/90 backdrop-blur-sm text-xs font-semibold px-2.5 py-1.5 rounded-lg shadow border border-slate-200 text-slate-600 hover:bg-white transition-colors">
             {showLegend ? "✕ Légende" : "🎨 Pentes"}
           </button>
         )}
-
-        {/* Legend panel */}
         {showLegend && hasSlopes && (
-          <div className="absolute bottom-12 left-3 z-10 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-slate-100 px-3 py-2.5 flex flex-col gap-1.5 fade-in">
+          <div className="absolute bottom-12 left-3 z-10 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-slate-100 px-3 py-2.5 flex flex-col gap-1.5">
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Pente</p>
             {LEGEND.map((item) => (
               <div key={item.label} className="flex items-center gap-2">
@@ -507,25 +657,31 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
         )}
       </div>
 
-      {/* ── Stats bar (route mode) ── */}
+      {/* ── Barre stats ── */}
       {mode === "route" && (
-        <div className="flex items-center justify-between min-h-[24px] gap-2">
+        <div className="flex items-center justify-between min-h-[24px] gap-2 flex-wrap">
 
-          {/* Left: loading / stats */}
+          {/* Gauche : statut / stats */}
           <div className="flex items-center gap-3 flex-wrap">
-            {travelMode === "swimming" && routePoints.length === 0 ? (
-              <span className="text-xs text-blue-500">🏊 1er point = départ (sur terre) · suivants = dans l&apos;eau · tracé en ligne droite</span>
+            {travelMode === "swimming" && waypoints.length === 0 ? (
+              <span className="text-xs text-blue-500">
+                🏊 Trace en ligne droite (natation)
+              </span>
             ) : isLoading ? (
               <span className="flex items-center gap-1.5 text-xs text-slate-500">
                 <span className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin inline-block" />
-                {loadingRoute ? "Calcul de l'itinéraire…" : "Calcul du dénivelé…"}
+                {loadingRoute ? "Calcul de l'itinéraire…" : "Analyse du dénivelé…"}
               </span>
-            ) : routePoints.length === 0 ? (
-              <span className="text-xs text-slate-400">Clique sur la carte pour tracer le parcours</span>
+            ) : waypoints.length === 0 ? (
+              <span className="text-xs text-slate-400">
+                Clique sur la carte pour tracer le parcours
+              </span>
             ) : routeInfo ? (
               <>
                 <Stat icon="📏" value={`${routeInfo.distanceKm.toFixed(2)} km`} />
-                {routeInfo.durationMin > 0 && <Stat icon="⏱️" value={`~${routeInfo.durationMin} min`} />}
+                {routeInfo.durationMin > 0 && (
+                  <Stat icon="⏱️" value={`~${routeInfo.durationMin} min`} />
+                )}
                 {routeInfo.gain != null && routeInfo.gain > 0 && (
                   <Stat icon="⬆️" value={`${routeInfo.gain} m`} title="Dénivelé positif" />
                 )}
@@ -536,19 +692,34 @@ export default function RoutePickerMap({ onLocationChange, onRouteChange, height
                 )}
               </>
             ) : (
-              <span className="text-xs text-slate-400">{routePoints.length} point{routePoints.length > 1 ? "s" : ""}</span>
+              <span className="text-xs text-slate-400">
+                {waypoints.length} point{waypoints.length > 1 ? "s" : ""}
+              </span>
+            )}
+
+            {/* Erreur de routage */}
+            {routeError && (
+              <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">
+                ⚠️ {routeError}
+              </span>
             )}
           </div>
 
-          {/* Right: actions */}
-          <div className="flex gap-2 flex-shrink-0">
-            {routePoints.length >= 2 && !isLoading && (
+          {/* Droite : actions */}
+          <div className="flex gap-1.5 flex-shrink-0">
+            {waypoints.length >= 1 && !isLoading && (
+              <button type="button" onClick={undoLast}
+                className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2.5 py-1 rounded-lg transition-colors">
+                ↩ Annuler
+              </button>
+            )}
+            {waypoints.length >= 2 && !isLoading && (
               <button type="button" onClick={closeLoop}
                 className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2.5 py-1 rounded-lg transition-colors">
                 🔄 Boucle
               </button>
             )}
-            {routePoints.length > 0 && (
+            {waypoints.length > 0 && (
               <button type="button" onClick={clearRoute}
                 className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-2.5 py-1 rounded-lg transition-colors">
                 ✕ Effacer

@@ -1,59 +1,84 @@
 export type TravelMode = "cycling" | "walking" | "driving";
 
+// Mapbox profile par mode sportif
+export const MAPBOX_PROFILE: Record<string, TravelMode> = {
+  cycling:  "cycling",
+  running:  "walking",   // Mapbox n'a pas de profil "running"
+  walking:  "walking",
+  hiking:   "walking",
+  swimming: "walking",   // jamais appelé pour swimming
+};
+
 export type DirectionsResult = {
-  /** Coordonnées GeoJSON suivant les routes réelles */
-  geometry: [number, number][];
-  /** Distance totale en kilomètres */
-  distanceKm: number;
-  /** Durée estimée en minutes */
+  geometry:    [number, number][];
+  distanceKm:  number;
   durationMin: number;
 };
 
 /**
- * Appelle l'API Mapbox Directions pour obtenir un itinéraire réel
- * entre une liste de waypoints.
- *
- * @param waypoints  Liste de coordonnées [lng, lat]
- * @param mode       Mode de transport : cycling | walking | driving
- * @returns          Géométrie GeoJSON + distance (km) + durée (min)
+ * Appelle Mapbox Directions pour UNE paire de points (from → to).
+ * N'envoie jamais plus de 2 waypoints → plus fiable, moins de timeouts.
  */
-export async function getDirections(
-  waypoints: [number, number][],
-  mode: TravelMode = "cycling"
+export async function getSegment(
+  from:  [number, number],
+  to:    [number, number],
+  mode:  TravelMode = "cycling",
 ): Promise<DirectionsResult | null> {
-  if (waypoints.length < 2) return null;
-
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  if (!token) {
-    console.error("NEXT_PUBLIC_MAPBOX_TOKEN manquant");
-    return null;
-  }
+  if (!token) { console.error("NEXT_PUBLIC_MAPBOX_TOKEN manquant"); return null; }
 
-  // Format attendu par l'API : "lng,lat;lng,lat;..."
-  const coords = waypoints.map(([lng, lat]) => `${lng},${lat}`).join(";");
-
+  const coords = `${from[0]},${from[1]};${to[0]},${to[1]}`;
   const url =
     `https://api.mapbox.com/directions/v5/mapbox/${mode}/${coords}` +
-    `?geometries=geojson&overview=full&access_token=${token}`;
+    `?geometries=geojson&overview=full&steps=false&access_token=${token}`;
 
   try {
     const res = await fetch(url);
     if (!res.ok) {
-      console.error("Mapbox Directions API error:", res.status, await res.text());
+      const txt = await res.text();
+      console.error(`Directions API ${res.status}:`, txt);
       return null;
     }
-
     const json = await res.json();
     const route = json.routes?.[0];
-    if (!route) return null;
+    if (!route) { console.warn("Directions: aucun itinéraire trouvé"); return null; }
 
     return {
-      geometry: route.geometry.coordinates as [number, number][],
-      distanceKm: route.distance / 1000,
+      geometry:    route.geometry.coordinates as [number, number][],
+      distanceKm:  Math.round((route.distance / 1000) * 100) / 100,
       durationMin: Math.round(route.duration / 60),
     };
   } catch (err) {
-    console.error("getDirections error:", err);
+    console.error("getSegment error:", err);
     return null;
   }
+}
+
+/**
+ * Compatibilité avec l'ancien code qui envoie N waypoints.
+ * Découpe en segments A→B, B→C, … et concatène.
+ */
+export async function getDirections(
+  waypoints: [number, number][],
+  mode: TravelMode = "cycling",
+): Promise<DirectionsResult | null> {
+  if (waypoints.length < 2) return null;
+
+  const results = await Promise.all(
+    waypoints.slice(0, -1).map((from, i) => getSegment(from, waypoints[i + 1], mode))
+  );
+
+  const valid = results.filter(Boolean) as DirectionsResult[];
+  if (valid.length === 0) return null;
+
+  // Concatène les géométries (évite le point de jonction en double)
+  const geometry = valid.reduce<[number, number][]>((acc, r, i) => {
+    return acc.concat(i === 0 ? r.geometry : r.geometry.slice(1));
+  }, []);
+
+  return {
+    geometry,
+    distanceKm:  Math.round(valid.reduce((s, r) => s + r.distanceKm, 0) * 100) / 100,
+    durationMin: valid.reduce((s, r) => s + r.durationMin, 0),
+  };
 }
