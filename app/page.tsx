@@ -151,6 +151,7 @@ export default function Home() {
   const [communauteAutoOpen, setCommunauteAutoOpen] = useState<"cherche" | "propose" | null>(null);
   const communauteSectionRef = useRef<HTMLDivElement>(null);
   const [hoveredSortie, setHoveredSortie] = useState<string | null>(null);
+  const [activeSortie,  setActiveSortie]  = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLng, setUserLng] = useState<number | null>(null);
@@ -208,14 +209,23 @@ export default function Home() {
 
   const markers = filtered
     .filter((s) => s.latitude && s.longitude)
-    .map((s) => ({
-      id: s.id, titre: s.titre, lieu: s.lieu, date: s.date, heure: s.heure,
-      sport: s.sport, niveau: s.niveau,
-      latitude: s.latitude!, longitude: s.longitude!,
-      distanceKm: s.distanceKm ?? null,
-      nbParticipants: s.nbParticipants, participantsMax: s.participantsMax,
-      status: s.status,
-    }));
+    .map((s) => {
+      const parsedForMap = parseRoute(s.route);
+      const geomForMap   = parsedForMap?.geometry ?? null;
+      const cardImageUrl = geomForMap && geomForMap.length >= 2
+        ? getRouteStaticImageUrl(geomForMap, 460, 240)
+        : resolveSortieImage(s.image_url ?? s.image, s.sport, s.lieu);
+      return {
+        id: s.id, titre: s.titre, lieu: s.lieu, date: s.date, heure: s.heure,
+        sport: s.sport, niveau: s.niveau,
+        latitude: s.latitude!, longitude: s.longitude!,
+        distanceKm:    s.distanceKm    ?? null,
+        elevationGain: s.elevationGain ?? null,
+        nbParticipants: s.nbParticipants, participantsMax: s.participantsMax,
+        status: s.status,
+        cardImageUrl,
+      };
+    });
 
   const totalParticipants = sorties.reduce((acc, s) => acc + (s.nbParticipants ?? 0), 0);
   const totalSports = Array.from(new Set(sorties.map((s) => s.sport).filter(Boolean))).length;
@@ -470,8 +480,8 @@ export default function Home() {
               return (
                 <Link key={s.id} href={`/sorties/${s.id}`}>
                   <div
-                    onMouseEnter={() => setHoveredSortie(s.id)}
-                    onMouseLeave={() => setHoveredSortie(null)}
+                    onMouseEnter={() => { setHoveredSortie(s.id); setActiveSortie(s.id); }}
+                    onMouseLeave={() => { setHoveredSortie(null); setActiveSortie(null); }}
                     className={`group flex gap-3 bg-white rounded-2xl border transition-all duration-150 cursor-pointer p-3 ${
                       hoveredSortie === s.id
                         ? "border-blue-400 shadow-md ring-1 ring-blue-200"
@@ -582,9 +592,11 @@ export default function Home() {
         <div className="hidden lg:block w-full sticky top-20">
           <div className="h-[70vh] rounded-2xl overflow-hidden shadow-sm border border-slate-100">
             <ExploreMap
-              sorties={filtered}
+              sorties={markers}
               hoveredId={hoveredSortie}
+              activeId={activeSortie}
               onHover={setHoveredSortie}
+              onActive={setActiveSortie}
               height="100%"
             />
           </div>
@@ -596,9 +608,11 @@ export default function Home() {
         {mobileView === "map" && (
           <div className="lg:hidden h-[calc(100vh-128px)] rounded-2xl overflow-hidden">
             <ExploreMap
-              sorties={filtered}
+              sorties={markers}
               hoveredId={hoveredSortie}
+              activeId={activeSortie}
               onHover={setHoveredSortie}
+              onActive={setActiveSortie}
               height="100%"
             />
           </div>
