@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 export type MapSortie = {
   id: string;
   titre: string;
@@ -22,116 +24,134 @@ export type MapSortie = {
 
 type Props = {
   sorties: MapSortie[];
-  hoveredId: string | null;
+  hoveredId: string | null;          // kept for card-list sync
   onHover: (id: string | null) => void;
   height?: string;
 };
 
+// ─── Sport palette ────────────────────────────────────────────────────────────
+
 const SPORT_COLOR: Record<string, string> = {
-  "Course à pied": "#ef4444",
-  "Vélo":          "#f97316",
-  "Randonnée":     "#22c55e",
-  "Trail":         "#8b5cf6",
-  "Natation":      "#06b6d4",
-  "Triathlon":     "#f59e0b",
+  "Vélo":          "#3b82f6",   // blue
+  "Course à pied": "#f97316",   // orange
+  "Randonnée":     "#22c55e",   // green
+  "Trail":         "#8b5cf6",   // purple
+  "Natation":      "#06b6d4",   // cyan / turquoise
+  "Triathlon":     "#f59e0b",   // amber
 };
 
-const SPORT_EMOJI: Record<string, string> = {
-  "Course à pied": "🏃",
-  "Vélo":          "🚴",
-  "Randonnée":     "🥾",
-  "Trail":         "⛰️",
-  "Natation":      "🏊",
-  "Triathlon":     "🏅",
-};
+function sportColor(sport: string): string {
+  return SPORT_COLOR[sport] ?? "#64748b";
+}
 
-function createMarkerEl(s: MapSortie): HTMLElement {
-  const color = SPORT_COLOR[s.sport] ?? "#3b82f6";
-  const emoji = SPORT_EMOJI[s.sport] ?? "🏅";
+// ─── Marker element — 10 px circle ───────────────────────────────────────────
 
+function createDotEl(sport: string): HTMLElement {
+  const color = sportColor(sport);
   const el = document.createElement("div");
-  el.style.cssText = [
-    "background:white",
-    `border:2.5px solid ${color}`,
-    "border-radius:20px",
-    "padding:5px 10px",
-    "font-size:14px",
-    "font-weight:700",
-    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
-    "display:flex",
-    "align-items:center",
-    "gap:4px",
-    "cursor:pointer",
-    "transition:transform 0.15s ease,box-shadow 0.15s ease,z-index 0s",
-    "white-space:nowrap",
-    "user-select:none",
-    `color:${color}`,
-    "position:relative",
-  ].join(";");
-  el.innerHTML = emoji;
+  Object.assign(el.style, {
+    width:        "12px",
+    height:       "12px",
+    borderRadius: "50%",
+    background:   color,
+    boxShadow:    `0 1px 4px rgba(0,0,0,0.25), 0 0 0 2px rgba(255,255,255,0.9)`,
+    cursor:       "pointer",
+    transition:   "transform 0.15s ease, box-shadow 0.15s ease",
+    flexShrink:   "0",
+  });
   return el;
 }
 
-function buildPopupHtml(s: MapSortie): string {
-  const color = SPORT_COLOR[s.sport] ?? "#3b82f6";
-  const emoji = SPORT_EMOJI[s.sport] ?? "🏅";
-  const isFull = s.nbParticipants != null && s.participantsMax != null && s.nbParticipants >= s.participantsMax;
-  const isClosed = s.status === "closed";
+function dotHover(el: HTMLElement, sport: string, on: boolean) {
+  const color = sportColor(sport);
+  if (on) {
+    el.style.transform  = "scale(1.8)";
+    el.style.boxShadow  = `0 2px 10px ${color}88, 0 0 0 3px rgba(255,255,255,0.95)`;
+  } else {
+    el.style.transform  = "scale(1)";
+    el.style.boxShadow  = `0 1px 4px rgba(0,0,0,0.25), 0 0 0 2px rgba(255,255,255,0.9)`;
+  }
+}
 
-  const pills: string[] = [];
-  if (s.distanceKm) pills.push(`📏 ${s.distanceKm.toFixed(1)} km`);
-  if (s.niveau) pills.push(`📊 ${s.niveau}`);
-  if (s.nbParticipants != null && s.participantsMax != null)
-    pills.push(`👥 ${s.nbParticipants}/${s.participantsMax}`);
+// ─── Popup HTML ───────────────────────────────────────────────────────────────
+
+function buildPopupHtml(s: MapSortie): string {
+  const color = sportColor(s.sport);
+
+  const dateFmt = s.date
+    ? new Date(s.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+    : null;
 
   return `
-    <div style="font-family:system-ui,sans-serif;min-width:175px;padding:2px 0">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-        <span style="font-size:16px">${emoji}</span>
-        <p style="margin:0;font-weight:800;font-size:13px;color:#0f172a;line-height:1.3;flex:1">${s.titre}</p>
+    <div style="font-family:system-ui,sans-serif;min-width:200px;padding:2px 0">
+
+      <p style="margin:0 0 6px;font-weight:800;font-size:13px;color:#0f172a;line-height:1.35">${s.titre}</p>
+
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+        ${s.distanceKm  ? `<span style="${pill}">${s.distanceKm.toFixed(1)} km</span>` : ""}
+        ${s.niveau      ? `<span style="${pill}">${s.niveau}</span>` : ""}
+        ${dateFmt       ? `<span style="${pill}">📅 ${dateFmt}${s.heure ? " · " + s.heure : ""}</span>` : ""}
       </div>
-      ${s.lieu ? `<p style="margin:0 0 3px;font-size:11px;color:#64748b">📍 ${s.lieu}</p>` : ""}
-      ${s.date ? `<p style="margin:0 0 6px;font-size:11px;color:#64748b">📅 ${s.date}${s.heure ? " · " + s.heure : ""}</p>` : ""}
-      ${pills.length > 0 ? `
-        <div style="display:flex;flex-wrap:wrap;gap:5px">
-          ${pills.map(p => `<span style="font-size:10px;font-weight:600;background:#f1f5f9;color:#475569;padding:2px 7px;border-radius:20px">${p}</span>`).join("")}
-        </div>` : ""}
-      ${isClosed ? `<div style="margin-top:6px;font-size:10px;font-weight:700;color:#64748b">🔒 Clôturée</div>` : ""}
-      ${isFull && !isClosed ? `<div style="margin-top:6px;font-size:10px;font-weight:700;color:#ef4444">Complet</div>` : ""}
-      <div style="margin-top:8px;border-top:1px solid #f1f5f9;padding-top:6px">
-        <span style="font-size:10px;font-weight:700;color:${color};background:${color}18;padding:3px 8px;border-radius:20px">Voir la sortie →</span>
-      </div>
+
+      <a href="/sorties/${s.id}"
+        style="display:block;text-align:center;text-decoration:none;
+               font-size:12px;font-weight:700;color:white;
+               background:${color};border-radius:10px;padding:7px 12px;
+               transition:opacity 0.15s"
+        onmouseover="this.style.opacity='0.85'"
+        onmouseout="this.style.opacity='1'">
+        Voir la sortie →
+      </a>
     </div>
   `;
 }
 
+const pill = [
+  "font-size:10px",
+  "font-weight:600",
+  "background:#f1f5f9",
+  "color:#475569",
+  "padding:2px 8px",
+  "border-radius:20px",
+].join(";");
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function ExploreMap({ sorties, hoveredId, onHover, height = "100%" }: Props) {
-  const containerRef  = useRef<HTMLDivElement>(null);
-  const mapRef        = useRef<mapboxgl.Map | null>(null);
-  const loadedRef     = useRef(false);
-  const markersRef    = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLElement }>>(new Map());
-  const popupRef      = useRef<mapboxgl.Popup | null>(null);
-  const onHoverRef    = useRef(onHover);
-  const sortiesRef    = useRef(sorties);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef       = useRef<mapboxgl.Map | null>(null);
+  const loadedRef    = useRef(false);
+  const markersRef   = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLElement; sport: string }>>(new Map());
+  const popupRef     = useRef<mapboxgl.Popup | null>(null);   // single popup instance
+  const onHoverRef   = useRef(onHover);
+  const sortiesRef   = useRef(sorties);
   onHoverRef.current  = onHover;
   sortiesRef.current  = sorties;
 
-  // ── Init map once ────────────────────────────────────────────────────────
+  // ── Init map once ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
     mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/mapbox/outdoors-v12",
-      center: [-0.57, 44.84],
-      zoom: 10,
+      style:     "mapbox://styles/mapbox/outdoors-v12",
+      center:    [-0.57, 44.84],
+      zoom:      10,
       scrollZoom: false,
     });
 
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
+
+    // scroll-to-zoom only when cursor is over the map
     map.getCanvas().addEventListener("mouseenter", () => map.scrollZoom.enable());
     map.getCanvas().addEventListener("mouseleave", () => map.scrollZoom.disable());
+
+    // Clicking map background closes popup + clears card highlight
+    map.on("click", () => {
+      popupRef.current?.remove();
+      onHoverRef.current(null);
+    });
 
     map.on("load", () => {
       loadedRef.current = true;
@@ -143,94 +163,105 @@ export default function ExploreMap({ sorties, hoveredId, onHover, height = "100%
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Rebuild markers when sorties list changes ────────────────────────────
+  // ── Rebuild markers when sorties list changes ──────────────────────────────
   useEffect(() => {
     if (!mapRef.current || !loadedRef.current) return;
     buildMarkers(mapRef.current, sorties);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sorties]);
 
-  // ── Hover: popup + scale — NO camera movement ────────────────────────────
+  // ── Sync card-list hover → marker scale (no popup, no camera) ─────────────
   useEffect(() => {
-    popupRef.current?.remove();
-    popupRef.current = null;
-
-    // Reset all scales
-    markersRef.current.forEach(({ el }) => {
-      el.style.transform = "scale(1)";
-      el.style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
-      el.style.zIndex = "0";
+    markersRef.current.forEach(({ el, sport }, id) => {
+      dotHover(el, sport, id === hoveredId);
     });
-
-    if (!hoveredId || !mapRef.current) return;
-
-    const sortie = sorties.find((s) => s.id === hoveredId);
-    const entry  = markersRef.current.get(hoveredId);
-    if (!sortie || !entry || !sortie.latitude || !sortie.longitude) return;
-
-    // Scale up
-    entry.el.style.transform = "scale(1.3)";
-    entry.el.style.boxShadow = "0 6px 20px rgba(0,0,0,0.22)";
-    entry.el.style.zIndex    = "20";
-
-    // Popup without moving camera
-    popupRef.current = new mapboxgl.Popup({
-      offset: 30,
-      closeButton: false,
-      closeOnClick: false,
-      maxWidth: "240px",
-    })
-      .setHTML(buildPopupHtml(sortie))
-      .setLngLat([sortie.longitude, sortie.latitude])
-      .addTo(mapRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hoveredId]);
 
-  // ── Build markers ────────────────────────────────────────────────────────
+  // ── Build markers ──────────────────────────────────────────────────────────
   function buildMarkers(map: mapboxgl.Map, items: MapSortie[]) {
+    // Remove old markers + popup
     markersRef.current.forEach(({ marker }) => marker.remove());
     markersRef.current.clear();
     popupRef.current?.remove();
+    popupRef.current = null;
 
     items
-      .filter((s) => s.latitude && s.longitude)
+      .filter((s) => s.latitude != null && s.longitude != null)
       .forEach((s) => {
-        const el = createMarkerEl(s);
+        const el = createDotEl(s.sport);
 
-        el.addEventListener("mouseenter", () => onHoverRef.current(s.id));
-        el.addEventListener("mouseleave", () => onHoverRef.current(null));
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          map.flyTo({
-            center: [s.longitude!, s.latitude!],
-            zoom: 14,
-            duration: 700,
-            essential: true,
-          });
+        // ── hover: pure DOM, no setState ──────────────────────────────────
+        el.addEventListener("mouseenter", () => {
+          dotHover(el, s.sport, true);
+          onHoverRef.current(s.id);       // highlights card in list
+        });
+        el.addEventListener("mouseleave", () => {
+          dotHover(el, s.sport, false);
+          onHoverRef.current(null);
         });
 
-        const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
+        // ── click: open popup (no flyTo, no zoom) ─────────────────────────
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();            // don't trigger map click → close
+
+          // Remove previous popup then create fresh one
+          popupRef.current?.remove();
+
+          popupRef.current = new mapboxgl.Popup({
+            offset:      [0, -8],         // above the dot
+            closeButton: true,
+            closeOnClick: false,
+            maxWidth:    "260px",
+          })
+            .setHTML(buildPopupHtml(s))
+            .setLngLat([s.longitude!, s.latitude!])
+            .addTo(map);
+        });
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
           .setLngLat([s.longitude!, s.latitude!])
           .addTo(map);
 
-        markersRef.current.set(s.id, { marker, el });
+        markersRef.current.set(s.id, { marker, el, sport: s.sport });
       });
   }
 
   return (
     <div style={{ position: "relative", height, width: "100%" }}>
       <div ref={containerRef} style={{ height: "100%", width: "100%" }} />
+
+      {/* Legend badge */}
       <div style={{
-        position: "absolute", top: 12, left: 12,
-        background: "rgba(255,255,255,0.92)", backdropFilter: "blur(6px)",
-        borderRadius: 12, padding: "6px 12px",
-        fontSize: 12, fontWeight: 700, color: "#1e293b",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-        pointerEvents: "none", zIndex: 10,
-        fontFamily: "system-ui,sans-serif",
-        display: "flex", alignItems: "center", gap: 6,
+        position:       "absolute",
+        top:            12,
+        left:           12,
+        background:     "rgba(255,255,255,0.92)",
+        backdropFilter: "blur(6px)",
+        borderRadius:   12,
+        padding:        "5px 11px",
+        fontSize:       11,
+        fontWeight:     700,
+        color:          "#1e293b",
+        boxShadow:      "0 2px 8px rgba(0,0,0,0.10)",
+        pointerEvents:  "none",
+        zIndex:         10,
+        fontFamily:     "system-ui,sans-serif",
+        display:        "flex",
+        alignItems:     "center",
+        gap:            8,
       }}>
-        📍 Sorties disponibles
+        {/* Sport dot legend */}
+        {Object.entries(SPORT_COLOR).slice(0, 4).map(([sport, color]) => (
+          <span key={sport} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{
+              width: 8, height: 8, borderRadius: "50%",
+              background: color, display: "inline-block",
+              boxShadow: "0 0 0 1.5px rgba(255,255,255,0.9)",
+            }} />
+            <span style={{ fontSize: 10, color: "#475569", fontWeight: 600 }}>{sport.split(" ")[0]}</span>
+          </span>
+        ))}
       </div>
     </div>
   );
