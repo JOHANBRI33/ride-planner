@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useUser } from "@/context/UserContext";
-import { AVATARS } from "@/app/onboarding/page";
+import { AVATARS } from "@/lib/avatars";
 
 export default function Navbar() {
   const { user, profile, logout } = useUser();

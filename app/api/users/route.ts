@@ -39,6 +39,8 @@ export async function GET(request: Request) {
       avatarKey: get("avatarKey"),
       photoUrl: get("photoUrl"),
       onboardingDone: get("onboardingDone"),
+      niveau:  get("niveau"),
+      rythme:  get("rythme"),
       cycling_level: get("cycling_level"),
       cycling_bikeType: get("cycling_bikeType"),
       cycling_mechanicalSkill: get("cycling_mechanicalSkill"),
@@ -83,6 +85,8 @@ export async function POST(request: Request) {
       avatarKey: body.avatarKey,
       photoUrl: body.photoUrl,
       onboardingDone: body.onboardingDone ?? "true",
+      niveau:  body.niveau,
+      rythme:  body.rythme,
       cycling_level: body.cycling_level,
       cycling_bikeType: body.cycling_bikeType,
       cycling_mechanicalSkill: body.cycling_mechanicalSkill,
@@ -136,6 +140,7 @@ export async function PATCH(request: Request) {
     const fields: Record<string, unknown> = {};
     const allowed = [
       "sexe", "ageRange", "sports", "goal", "description", "avatarKey", "photoUrl",
+      "niveau", "rythme",
       "cycling_level", "cycling_bikeType", "cycling_mechanicalSkill",
       "running_pace", "running_terrain", "running_distance",
       "hiking_duration", "hiking_elevationGain", "hiking_groupPref",

@@ -2,600 +2,287 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
-import { useDropzone } from "react-dropzone";
-
-// ─── Avatar definitions ───────────────────────────────────────────────────────
-// URLs pointent vers des images de personnages connus (remplaçables par /avatars/xxx.png)
-
-export const AVATARS = [
-  { key: "marchand",    name: "Léon Marchand",        emoji: "🏊", url: "https://api.dicebear.com/9.x/bottts/svg?seed=leonmarchand" },
-  { key: "beaugrand",   name: "C. Beaugrand",         emoji: "🏅", url: "https://api.dicebear.com/9.x/bottts/svg?seed=cassandrebeaugrand" },
-  { key: "gressier",    name: "Jimmy Gressier",        emoji: "🏃", url: "https://api.dicebear.com/9.x/bottts/svg?seed=jimmygressier" },
-  { key: "alaphilippe", name: "J. Alaphilippe",        emoji: "🚴", url: "https://api.dicebear.com/9.x/bottts/svg?seed=julianalaphilippe" },
-  { key: "pinot",       name: "Thibaut Pinot",         emoji: "🚵", url: "https://api.dicebear.com/9.x/bottts/svg?seed=thibautpinot" },
-  { key: "manaudou",    name: "F. Manaudou",           emoji: "🌊", url: "https://api.dicebear.com/9.x/bottts/svg?seed=florentmanaudou" },
-  { key: "luis",        name: "Vincent Luis",          emoji: "⚡", url: "https://api.dicebear.com/9.x/bottts/svg?seed=vincentluis" },
-  { key: "dhaene",      name: "François D'Haene",      emoji: "🏔️", url: "https://api.dicebear.com/9.x/bottts/svg?seed=francoisdhaene" },
-  { key: "bonnet",      name: "Charlotte Bonnet",      emoji: "💧", url: "https://api.dicebear.com/9.x/bottts/svg?seed=charlottebonnet" },
-  { key: "thevenard",   name: "X. Thevenard",          emoji: "🥾", url: "https://api.dicebear.com/9.x/bottts/svg?seed=xavierthevenard" },
-];
+import Link from "next/link";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type SportKey = "cycling" | "running" | "hiking" | "swimming" | "other";
 
-type Option = { value: string; label: string; emoji: string };
+type Option = { value: string; label: string; emoji: string; desc?: string };
 
-type StepDef = {
-  id: string;
-  sport: SportKey | null;
+type Step = {
+  id:       string;
   question: string;
-  emoji: string;
-  hint?: string;
-  type: "single" | "multi" | "text" | "avatar";
-  options: Option[];
-  profilePath: string;
-  optional?: boolean;
+  emoji:    string;
+  hint?:    string;
+  type:     "multi" | "single";
+  options:  Option[];
 };
 
-type UserProfile = {
-  v: 3;
-  sexe: string;
-  ageRange: string;
-  sports: SportKey[];
-  global: Record<string, string>;
-  cycling: Record<string, string>;
-  running: Record<string, string>;
-  hiking: Record<string, string>;
-  swimming: Record<string, string>;
-  other: Record<string, string>;
-  description: string;
-  avatarKey: string;
-  photoUrl: string;
+type MatchedSortie = {
+  id: string;
+  titre: string;
+  sport: string;
+  niveau: string | null;
+  date: string | null;
+  lieu: string | null;
+  distanceKm: number | null;
+  nbParticipants: number;
+  participantsMax: number;
+  score: number;
 };
 
-// ─── Step definitions ─────────────────────────────────────────────────────────
+// ─── Sport mapping ────────────────────────────────────────────────────────────
 
-const SEX_STEP: StepDef = {
-  id: "sexe",
-  sport: null,
-  question: "Tu es ?",
-  emoji: "👤",
-  type: "single",
-  profilePath: "global.sexe",
-  options: [
-    { value: "homme",     label: "Homme",       emoji: "👨" },
-    { value: "femme",     label: "Femme",        emoji: "👩" },
-    { value: "nonbinaire",label: "Non binaire",  emoji: "🧑" },
-  ],
+const SPORT_TO_SORTIE: Record<SportKey, string[]> = {
+  cycling:  ["Vélo"],
+  running:  ["Course à pied"],
+  hiking:   ["Randonnée", "Trail"],
+  swimming: ["Natation"],
+  other:    [],
 };
 
-const AGE_STEP: StepDef = {
-  id: "ageRange",
-  sport: null,
-  question: "Ta tranche d'âge ?",
-  emoji: "🎂",
-  type: "single",
-  profilePath: "global.ageRange",
-  options: [
-    { value: "moins20", label: "Moins de 20 ans", emoji: "🌱" },
-    { value: "20-30",   label: "20 – 30 ans",     emoji: "⚡" },
-    { value: "30-40",   label: "30 – 40 ans",     emoji: "🔥" },
-    { value: "40-50",   label: "40 – 50 ans",     emoji: "💪" },
-    { value: "50-60",   label: "50 – 60 ans",     emoji: "🏅" },
-    { value: "plus60",  label: "Plus de 60 ans",  emoji: "🌟" },
-  ],
+const SPORT_EMOJI_MAP: Record<string, string> = {
+  "Vélo": "🚴", "Course à pied": "🏃", "Randonnée": "🥾",
+  "Trail": "⛰️", "Natation": "🏊", "Triathlon": "🏅",
 };
 
-const SPORTS_STEP: StepDef = {
-  id: "sports",
-  sport: null,
-  question: "Quels sports pratiques-tu ?",
-  emoji: "🏅",
-  hint: "Plusieurs choix possibles",
-  type: "multi",
-  profilePath: "global.sports",
-  options: [
-    { value: "cycling", label: "Vélo",              emoji: "🚴" },
-    { value: "running", label: "Course à pied",     emoji: "🏃" },
-    { value: "hiking",  label: "Randonnée / Trail",  emoji: "🥾" },
-    { value: "swimming",label: "Natation",           emoji: "🏊" },
-    { value: "other",   label: "Autre sport",        emoji: "🏅" },
-  ],
+const SPORT_COLOR_MAP: Record<string, string> = {
+  "Vélo": "#3B82F6", "Course à pied": "#F97316", "Randonnée": "#22C55E",
+  "Trail": "#8B5CF6", "Natation": "#06B6D4", "Triathlon": "#F59E0B",
 };
 
-const GOAL_STEP: StepDef = {
-  id: "goal",
-  sport: null,
-  question: "Quel est ton objectif principal ?",
-  emoji: "🎯",
-  type: "single",
-  profilePath: "global.goal",
-  options: [
-    { value: "performance", label: "Progresser & performer",  emoji: "📈" },
-    { value: "social",      label: "Rencontrer des sportifs", emoji: "🤝" },
-    { value: "fun",         label: "Bouger pour le plaisir",  emoji: "😄" },
-    { value: "health",      label: "Garder la forme",         emoji: "💪" },
-  ],
-};
+// ─── Steps ────────────────────────────────────────────────────────────────────
 
-const DESCRIPTION_STEP: StepDef = {
-  id: "description",
-  sport: null,
-  question: "Décris le sportif que tu es",
-  emoji: "✍️",
-  hint: "Facultatif — tes habitudes, ton style, ce qui te motive…",
-  type: "text",
-  profilePath: "global.description",
-  optional: true,
-  options: [],
-};
+const STEPS: Step[] = [
+  {
+    id: "sports",
+    question: "Quels sports pratiques-tu ?",
+    emoji: "🏅",
+    hint: "Plusieurs choix possibles",
+    type: "multi",
+    options: [
+      { value: "cycling",  label: "Vélo",              emoji: "🚴", desc: "Route, gravel, VTT" },
+      { value: "running",  label: "Course à pied",     emoji: "🏃", desc: "Route, trail, piste" },
+      { value: "hiking",   label: "Randonnée / Trail", emoji: "🥾", desc: "Journée ou bivouac" },
+      { value: "swimming", label: "Natation",          emoji: "🏊", desc: "Piscine ou eau libre" },
+      { value: "other",    label: "Autre sport",       emoji: "🏅", desc: "Tout autre activité" },
+    ],
+  },
+  {
+    id: "goal",
+    question: "Quel est ton objectif principal ?",
+    emoji: "🎯",
+    type: "single",
+    options: [
+      { value: "performance", label: "Progresser & performer",  emoji: "📈", desc: "Je vise la progression" },
+      { value: "social",      label: "Rencontrer des sportifs", emoji: "🤝", desc: "Je cherche une communauté" },
+      { value: "fun",         label: "Bouger pour le plaisir",  emoji: "😄", desc: "Sans pression" },
+      { value: "health",      label: "Garder la forme",        emoji: "💪", desc: "Régulier & équilibré" },
+    ],
+  },
+  {
+    id: "niveau",
+    question: "Quel est ton niveau général ?",
+    emoji: "📊",
+    type: "single",
+    options: [
+      { value: "Débutant",      label: "Débutant",      emoji: "🌱", desc: "Je débute ou je reprends" },
+      { value: "Intermédiaire", label: "Intermédiaire", emoji: "🔥", desc: "Pratique régulière" },
+      { value: "Avancé",        label: "Avancé",        emoji: "⚡", desc: "Entraînement sérieux" },
+      { value: "Expert",        label: "Expert",        emoji: "🏆", desc: "Compétition / haute performance" },
+    ],
+  },
+  {
+    id: "rythme",
+    question: "À quelle fréquence sors-tu ?",
+    emoji: "📅",
+    type: "single",
+    options: [
+      { value: "occasional", label: "De temps en temps", emoji: "☕", desc: "Quand l'occasion se présente" },
+      { value: "weekly",     label: "1 fois par semaine", emoji: "🗓️", desc: "Une sortie hebdo" },
+      { value: "regular",    label: "2–3 fois par semaine", emoji: "🔥", desc: "Pratique régulière" },
+      { value: "daily",      label: "Presque tous les jours", emoji: "⚡", desc: "Sportif assidu" },
+    ],
+  },
+];
 
-const AVATAR_STEP: StepDef = {
-  id: "avatar",
-  sport: null,
-  question: "Choisis ton avatar ou ajoute ta photo",
-  emoji: "🖼️",
-  hint: "Facultatif",
-  type: "avatar",
-  profilePath: "global.avatar",
-  optional: true,
-  options: [],
-};
+// ─── Scoring (écran résultats) ────────────────────────────────────────────────
 
-const SPORT_STEPS: Record<SportKey, StepDef[]> = {
-  cycling: [
-    {
-      id: "cycling.level", sport: "cycling",
-      question: "Quel est ton niveau à vélo ?", emoji: "🚴",
-      type: "single", profilePath: "cycling.level",
-      options: [
-        { value: "beginner",     label: "Débutant — je découvre",             emoji: "🌱" },
-        { value: "intermediate", label: "Intermédiaire — sorties régulières", emoji: "🔥" },
-        { value: "advanced",     label: "Avancé — entraînement sérieux",      emoji: "⚡" },
-        { value: "expert",       label: "Expert / compétition",               emoji: "🏆" },
-      ],
-    },
-    {
-      id: "cycling.bikeType", sport: "cycling",
-      question: "Quel type de vélo utilises-tu ?", emoji: "🚲",
-      type: "single", profilePath: "cycling.bikeType",
-      options: [
-        { value: "road",     label: "Route",            emoji: "🛣️" },
-        { value: "gravel",   label: "Gravel",           emoji: "🌾" },
-        { value: "mtb",      label: "VTT",              emoji: "⛰️" },
-        { value: "electric", label: "Électrique / VAE", emoji: "⚡" },
-      ],
-    },
-    {
-      id: "cycling.mechanicalSkill", sport: "cycling",
-      question: "Comment te débrouilles-tu mécaniquement ?", emoji: "🔧",
-      type: "single", profilePath: "cycling.mechanicalSkill",
-      options: [
-        { value: "autonomous", label: "Autonome — je répare tout",          emoji: "🛠️" },
-        { value: "basics",     label: "Je gère les basiques (crevaison…)", emoji: "🔧" },
-        { value: "dependent",  label: "Je dépends d'un atelier",            emoji: "🏪" },
-      ],
-    },
-  ],
-  running: [
-    {
-      id: "running.pace", sport: "running",
-      question: "Quelle est ton allure de course habituelle ?", emoji: "⏱️",
-      type: "single", profilePath: "running.pace",
-      options: [
-        { value: "sub5",  label: "< 5 min/km — allure rapide",       emoji: "⚡" },
-        { value: "5to6",  label: "5 à 6 min/km",                     emoji: "🔥" },
-        { value: "6to7",  label: "6 à 7 min/km",                     emoji: "🏃" },
-        { value: "7plus", label: "> 7 min/km — je prends mon temps", emoji: "🚶" },
-      ],
-    },
-    {
-      id: "running.terrain", sport: "running",
-      question: "Sur quel terrain cours-tu principalement ?", emoji: "🗺️",
-      type: "single", profilePath: "running.terrain",
-      options: [
-        { value: "road",  label: "Route / asphalte",   emoji: "🛣️" },
-        { value: "trail", label: "Trail / montagne",   emoji: "⛰️" },
-        { value: "mixed", label: "Mixte",              emoji: "🌿" },
-        { value: "track", label: "Piste d'athlétisme", emoji: "🏟️" },
-      ],
-    },
-    {
-      id: "running.distance", sport: "running",
-      question: "Quelle distance cours-tu habituellement ?", emoji: "📏",
-      type: "single", profilePath: "running.distance",
-      options: [
-        { value: "short",  label: "Moins de 5 km",            emoji: "🌱" },
-        { value: "medium", label: "5 à 10 km",                emoji: "🏃" },
-        { value: "long",   label: "10 à 21 km (semi-marathon)",emoji: "🔥" },
-        { value: "ultra",  label: "Plus de 21 km (marathon+)", emoji: "🏆" },
-      ],
-    },
-  ],
-  hiking: [
-    {
-      id: "hiking.duration", sport: "hiking",
-      question: "Combien de temps durent tes randonnées habituelles ?", emoji: "⏰",
-      type: "single", profilePath: "hiking.duration",
-      options: [
-        { value: "short", label: "Moins de 2h",           emoji: "☕" },
-        { value: "half",  label: "2 à 4h — demi-journée", emoji: "🌤️" },
-        { value: "day",   label: "Journée complète",       emoji: "☀️" },
-        { value: "multi", label: "Multi-jours / bivouac",  emoji: "⛺" },
-      ],
-    },
-    {
-      id: "hiking.elevationGain", sport: "hiking",
-      question: "Quel dénivelé positif acceptes-tu par sortie ?", emoji: "⛰️",
-      type: "single", profilePath: "hiking.elevationGain",
-      options: [
-        { value: "flat",     label: "Terrain plat — < 200 m D+", emoji: "🌾" },
-        { value: "moderate", label: "200 à 500 m D+",            emoji: "🌿" },
-        { value: "steep",    label: "500 à 1000 m D+",           emoji: "⛰️" },
-        { value: "extreme",  label: "Plus de 1000 m D+",         emoji: "🏔️" },
-      ],
-    },
-    {
-      id: "hiking.groupPref", sport: "hiking",
-      question: "Tu préfères randonner comment ?", emoji: "👥",
-      type: "single", profilePath: "hiking.groupPref",
-      options: [
-        { value: "solo",  label: "Solo — je trace ma route", emoji: "🎧" },
-        { value: "duo",   label: "En duo",                   emoji: "👫" },
-        { value: "small", label: "Petit groupe (3–6)",       emoji: "🏃" },
-        { value: "large", label: "Grand groupe (7+)",        emoji: "🎉" },
-      ],
-    },
-  ],
-  swimming: [
-    {
-      id: "swimming.level", sport: "swimming",
-      question: "Quel est ton niveau en natation ?", emoji: "🏊",
-      type: "single", profilePath: "swimming.level",
-      options: [
-        { value: "beginner",     label: "Débutant — je reprends",             emoji: "🌱" },
-        { value: "intermediate", label: "Intermédiaire — natation régulière", emoji: "🔥" },
-        { value: "advanced",     label: "Avancé — compétition / masters",     emoji: "🏆" },
-        { value: "openwater",    label: "Eau libre / triathlon",              emoji: "🌊" },
-      ],
-    },
-    {
-      id: "swimming.distance", sport: "swimming",
-      question: "Quelle distance nages-tu par séance ?", emoji: "📏",
-      type: "single", profilePath: "swimming.distance",
-      options: [
-        { value: "short",  label: "Moins de 1 km", emoji: "🌱" },
-        { value: "medium", label: "1 à 2 km",      emoji: "🏊" },
-        { value: "long",   label: "2 à 3 km",      emoji: "🔥" },
-        { value: "ultra",  label: "Plus de 3 km",  emoji: "🏆" },
-      ],
-    },
-  ],
-  other: [],
-};
-
-// ─── Step queue builder ───────────────────────────────────────────────────────
-
-const MAX_SPORT_STEPS = 5;
-
-function buildActiveSteps(selectedSports: SportKey[]): StepDef[] {
-  const result: StepDef[] = [SEX_STEP, AGE_STEP, SPORTS_STEP];
-
-  if (selectedSports.length > 0) {
-    let budget = MAX_SPORT_STEPS;
-    selectedSports.forEach((sport, i) => {
-      if (budget <= 0) return;
-      const sportSteps = SPORT_STEPS[sport] ?? [];
-      const remaining = selectedSports.length - i;
-      const quota = i === 0 && remaining > 1 ? Math.ceil(budget / 2) : Math.ceil(budget / remaining);
-      const count = Math.min(quota, sportSteps.length, budget);
-      result.push(...sportSteps.slice(0, count));
-      budget -= count;
-    });
+function scoreSortie(
+  s: { sport: string; niveau: string | null; date: string | null },
+  sports: string[],   // noms de sport ("Vélo", "Course à pied"…)
+  niveau: string,
+): number {
+  let score = 0;
+  if (sports.includes(s.sport)) score += 3;
+  if (s.niveau === niveau) score += 2;
+  else if (s.niveau === "Débutant") score += 1; // toujours accessible
+  if (s.date) {
+    const days = (new Date(s.date).getTime() - Date.now()) / 86400000;
+    if (days >= 0 && days <= 7) score += 1;
   }
-
-  result.push(GOAL_STEP, DESCRIPTION_STEP, AVATAR_STEP);
-  return result;
+  return score;
 }
 
-// ─── Profile serializer ───────────────────────────────────────────────────────
+// ─── Composant bouton option ──────────────────────────────────────────────────
 
-function buildProfile(
-  selectedSports: SportKey[],
-  answers: Record<string, string | string[]>,
-  steps: StepDef[],
-  description: string,
-  avatarKey: string,
-  photoUrl: string,
-): UserProfile {
-  const profile: UserProfile = {
-    v: 3, sexe: answers["sexe"] as string ?? "",
-    ageRange: answers["ageRange"] as string ?? "",
-    sports: selectedSports,
-    global: {}, cycling: {}, running: {}, hiking: {}, swimming: {}, other: {},
-    description, avatarKey, photoUrl,
-  };
-
-  for (const step of steps) {
-    const answer = answers[step.id];
-    if (!answer || step.type === "text" || step.type === "avatar") continue;
-    const [ns, field] = step.profilePath.split(".") as [keyof UserProfile, string];
-    if (ns === "global") {
-      profile.global[field] = answer as string;
-    } else if (ns in profile) {
-      (profile[ns] as Record<string, unknown>)[field] = answer;
-    }
-  }
-  return profile;
-}
-
-// ─── Sport helpers ────────────────────────────────────────────────────────────
-
-const SPORT_LABEL: Record<SportKey, string> = {
-  cycling: "Vélo", running: "Running", hiking: "Rando", swimming: "Natation", other: "Autre",
-};
-const SPORT_COLOR: Record<SportKey, string> = {
-  cycling:  "bg-orange-100 text-orange-700 border-orange-200",
-  running:  "bg-blue-100 text-blue-700 border-blue-200",
-  hiking:   "bg-emerald-100 text-emerald-700 border-emerald-200",
-  swimming: "bg-cyan-100 text-cyan-700 border-cyan-200",
-  other:    "bg-slate-100 text-slate-600 border-slate-200",
-};
-
-// ─── Dropzone sub-component ───────────────────────────────────────────────────
-
-function compressImage(file: File): Promise<string> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const MAX = 300;
-        const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
-        const canvas = document.createElement("canvas");
-        canvas.width  = Math.round(img.width  * ratio);
-        canvas.height = Math.round(img.height * ratio);
-        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.7));
-      };
-      img.src = e.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-function PhotoDropzone({ onPhoto }: { onPhoto: (dataUrl: string) => void }) {
-  const onDrop = useCallback((files: File[]) => {
-    const file = files[0];
-    if (!file) return;
-    compressImage(file).then(onPhoto);
-  }, [onPhoto]);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop, accept: { "image/*": [] }, maxFiles: 1, maxSize: 2 * 1024 * 1024,
-  });
-
+function OptionBtn({
+  opt, selected, onClick,
+}: { opt: Option; selected: boolean; onClick: () => void }) {
   return (
-    <div
-      {...getRootProps()}
-      className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all duration-200 ${
-        isDragActive ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/50"
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-3.5 w-full px-4 py-3.5 rounded-2xl border-2 font-semibold text-left transition-all duration-150 active:scale-[0.98] ${
+        selected
+          ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-200"
+          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm"
       }`}
     >
-      <input {...getInputProps()} />
-      <div className="text-3xl mb-2">📸</div>
-      <p className="text-sm font-semibold text-slate-600">
-        {isDragActive ? "Dépose ici…" : "Glisse ta photo ou clique pour choisir"}
-      </p>
-      <p className="text-xs text-slate-400 mt-1">JPG, PNG — max 2 Mo</p>
-    </div>
+      <span className="text-2xl flex-shrink-0 leading-none">{opt.emoji}</span>
+      <span className="flex-1 min-w-0">
+        <span className="text-sm leading-snug block">{opt.label}</span>
+        {opt.desc && <span className="text-xs text-slate-400 font-normal">{opt.desc}</span>}
+      </span>
+      {selected && <span className="text-blue-500 font-bold flex-shrink-0">✓</span>}
+    </button>
   );
 }
 
-// ─── Avatar step sub-component ────────────────────────────────────────────────
-
-function AvatarStep({
-  selectedAvatar, photoUrl,
-  onAvatar, onPhoto, onClear,
-}: {
-  selectedAvatar: string; photoUrl: string;
-  onAvatar: (key: string) => void; onPhoto: (url: string) => void; onClear: () => void;
-}) {
-  const [tab, setTab] = useState<"avatar" | "photo">("avatar");
-
-  const preview = photoUrl || (selectedAvatar ? AVATARS.find(a => a.key === selectedAvatar)?.url : null);
-
-  return (
-    <div className="space-y-4">
-      {/* Preview */}
-      {preview && (
-        <div className="flex flex-col items-center gap-2">
-          <img
-            src={preview} alt="Aperçu"
-            className="w-20 h-20 rounded-full object-cover border-4 border-blue-500 shadow-lg"
-          />
-          <button onClick={onClear} className="text-xs text-slate-400 hover:text-red-500 transition-colors">
-            Supprimer
-          </button>
-        </div>
-      )}
-
-      {/* Tabs */}
-      <div className="flex rounded-xl border border-slate-200 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setTab("avatar")}
-          className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${tab === "avatar" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-        >
-          🎭 Choisir un avatar
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("photo")}
-          className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${tab === "photo" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-        >
-          📷 Ma photo
-        </button>
-      </div>
-
-      {tab === "avatar" && (
-        <div className="grid grid-cols-5 gap-2">
-          {AVATARS.map((av) => (
-            <button
-              key={av.key}
-              type="button"
-              onClick={() => { onAvatar(av.key); onPhoto(""); }}
-              className={`flex flex-col items-center gap-1 p-1.5 rounded-xl border-2 transition-all duration-150 ${
-                selectedAvatar === av.key && !photoUrl
-                  ? "border-blue-500 bg-blue-50 shadow-sm"
-                  : "border-slate-200 hover:border-slate-300 bg-white"
-              }`}
-            >
-              <img
-                src={av.url}
-                alt={av.name}
-                className="w-12 h-12 rounded-full object-cover"
-                onError={(e) => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/9.x/bottts/svg?seed=${av.key}`; }}
-              />
-              <span className="text-[10px] font-semibold text-slate-600 truncate w-full text-center">{av.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {tab === "photo" && (
-        <PhotoDropzone onPhoto={(url) => { onPhoto(url); onAvatar(""); }} />
-      )}
-    </div>
-  );
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { user, profile } = useUser();
+  const { user, profile, refreshProfile } = useUser();
 
-  // Si l'onboarding a déjà été fait, on saute l'écran de bienvenue
   const alreadyDone = profile?.onboardingDone === "true";
-  const [welcome, setWelcome]               = useState(!alreadyDone); // skip welcome si déjà fait
-  const [stepIndex, setStepIndex]           = useState(0);
-  const [animating, setAnimating]           = useState(false);
-  const [slideDir, setSlideDir]             = useState<"forward" | "back">("forward");
-  const [selectedSports, setSelectedSports] = useState<SportKey[]>([]);
-  const [answers, setAnswers]               = useState<Record<string, string | string[]>>({});
-  const [activeSteps, setActiveSteps]       = useState<StepDef[]>([SEX_STEP, AGE_STEP, SPORTS_STEP, GOAL_STEP, DESCRIPTION_STEP, AVATAR_STEP]);
-  const [description, setDescription]       = useState("");
-  const [avatarKey, setAvatarKey]           = useState("");
-  const [photoUrl, setPhotoUrl]             = useState("");
-  const [saving, setSaving]                 = useState(false);
 
-  const currentStep = activeSteps[stepIndex];
-  const totalSteps  = activeSteps.length;
-  const isLast      = stepIndex === totalSteps - 1;
-  const progress    = totalSteps > 1 ? (stepIndex / (totalSteps - 1)) * 100 : 0;
-  const currentAnswer = answers[currentStep.id];
+  // Step index: 0-3 = questions, 4 = résultats
+  const [step,         setStep]         = useState(0);
+  const [animating,    setAnimating]    = useState(false);
+  const [slideDir,     setSlideDir]     = useState<"fwd" | "bck">("fwd");
+  const [sports,       setSports]       = useState<SportKey[]>([]);
+  const [goal,         setGoal]         = useState("");
+  const [niveau,       setNiveau]       = useState("");
+  const [rythme,       setRythme]       = useState("");
+  const [saving,       setSaving]       = useState(false);
+  const [matches,      setMatches]      = useState<MatchedSortie[]>([]);
+  const [loadingMatch, setLoadingMatch] = useState(false);
+
+  const isResults = step === STEPS.length;
+
+  // Fetch + score sorties quand on arrive à l'écran résultats
+  useEffect(() => {
+    if (!isResults) return;
+    setLoadingMatch(true);
+    const sportNames = sports.flatMap((k) => SPORT_TO_SORTIE[k] ?? []);
+    fetch("/api/sorties")
+      .then((r) => r.json())
+      .then((data: Array<{
+        id: string; titre: string; sport: string; niveau: string | null;
+        date: string | null; lieu: string | null; distanceKm: number | null;
+        nbParticipants: number; participantsMax: number;
+      }>) => {
+        const scored = data
+          .map((s) => ({ ...s, score: scoreSortie(s, sportNames, niveau) }))
+          .filter((s) => s.score >= 3)  // au moins un sport en commun
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 4);
+        setMatches(scored);
+      })
+      .catch(() => setMatches([]))
+      .finally(() => setLoadingMatch(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isResults]);
+
+  // ── Answers ───────────────────────────────────────────────────────────────
+
+  const currentStep = STEPS[step];
+
+  function getAnswer(): string | SportKey[] {
+    if (!currentStep) return [];
+    switch (currentStep.id) {
+      case "sports": return sports;
+      case "goal":   return goal;
+      case "niveau": return niveau;
+      case "rythme": return rythme;
+      default:       return "";
+    }
+  }
 
   function isSelected(value: string): boolean {
-    if (currentStep.id === "sports") return selectedSports.includes(value as SportKey);
-    if (currentStep.type === "multi") return Array.isArray(currentAnswer) && currentAnswer.includes(value);
-    return currentAnswer === value;
+    const ans = getAnswer();
+    if (Array.isArray(ans)) return ans.includes(value as SportKey);
+    return ans === value;
   }
 
   function handleSelect(value: string) {
+    if (!currentStep) return;
     if (currentStep.id === "sports") {
-      setSelectedSports((prev) =>
+      setSports((prev) =>
         prev.includes(value as SportKey) ? prev.filter((s) => s !== value) : [...prev, value as SportKey]
       );
-      return;
-    }
-    if (currentStep.type === "multi") {
-      setAnswers((prev) => {
-        const cur = (prev[currentStep.id] as string[] | undefined) ?? [];
-        return { ...prev, [currentStep.id]: cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value] };
-      });
-    } else {
-      setAnswers((prev) => ({ ...prev, [currentStep.id]: value }));
-    }
+    } else if (currentStep.id === "goal")   setGoal(value);
+    else if (currentStep.id === "niveau")   setNiveau(value);
+    else if (currentStep.id === "rythme")   setRythme(value);
   }
 
   function canContinue(): boolean {
-    if (currentStep.optional) return true;
-    if (currentStep.id === "sports") return selectedSports.length > 0;
-    if (currentStep.type === "multi") return Array.isArray(currentAnswer) && currentAnswer.length > 0;
-    if (currentStep.type === "text" || currentStep.type === "avatar") return true;
-    return !!currentAnswer;
+    if (!currentStep) return true;
+    if (currentStep.id === "sports") return sports.length > 0;
+    return !!getAnswer();
   }
 
-  function transition(dir: "forward" | "back", callback: () => void) {
+  function transition(dir: "fwd" | "bck", cb: () => void) {
     if (animating) return;
     setSlideDir(dir);
     setAnimating(true);
-    setTimeout(() => { callback(); setAnimating(false); }, 200);
+    setTimeout(() => { cb(); setAnimating(false); }, 180);
   }
 
-  async function goNext() {
+  function goNext() {
     if (!canContinue() || animating) return;
-
-    if (currentStep.id === "sports") {
-      const newSteps = buildActiveSteps(selectedSports);
-      setActiveSteps(newSteps);
-    }
-
-    if (isLast) {
-      await saveProfile();
-      return;
-    }
-
-    transition("forward", () => setStepIndex((i) => i + 1));
-  }
-
-  async function saveProfile() {
-    setSaving(true);
-    const profile = buildProfile(selectedSports, answers, activeSteps, description, avatarKey, photoUrl);
-
-    // Save to localStorage
-    localStorage.setItem("userPreferences", JSON.stringify(profile));
-
-    // Save to Airtable
-    if (user?.email) {
-      const payload = {
-        email: user.email,
-        sexe: profile.sexe,
-        ageRange: profile.ageRange,
-        sports: profile.sports.join(","),
-        goal: profile.global.goal ?? "",
-        description: profile.description,
-        avatarKey: profile.avatarKey,
-        photoUrl: profile.photoUrl,
-        onboardingDone: "true",
-        cycling_level: profile.cycling.level ?? "",
-        cycling_bikeType: profile.cycling.bikeType ?? "",
-        cycling_mechanicalSkill: profile.cycling.mechanicalSkill ?? "",
-        running_pace: profile.running.pace ?? "",
-        running_terrain: profile.running.terrain ?? "",
-        running_distance: profile.running.distance ?? "",
-        hiking_duration: profile.hiking.duration ?? "",
-        hiking_elevationGain: profile.hiking.elevationGain ?? "",
-        hiking_groupPref: profile.hiking.groupPref ?? "",
-        swimming_level: profile.swimming.level ?? "",
-        swimming_distance: profile.swimming.distance ?? "",
-      };
-      await fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    }
-
-    setSaving(false);
-    // Feedback sur la homepage
-    router.push("/?profil=configured");
+    transition("fwd", () => setStep((i) => i + 1));
   }
 
   function goBack() {
-    if (stepIndex === 0 || animating) return;
-    transition("back", () => setStepIndex((i) => i - 1));
+    if (step === 0 || animating) return;
+    transition("bck", () => setStep((i) => i - 1));
+  }
+
+  async function finish() {
+    setSaving(true);
+
+    const sportNames = sports.flatMap((k) => SPORT_TO_SORTIE[k] ?? []);
+    const payload = {
+      sports:         sports.join(","),
+      goal,
+      niveau,
+      rythme,
+      onboardingDone: "true",
+    };
+
+    // localStorage (fallback)
+    localStorage.setItem("userPreferences", JSON.stringify({
+      v: 4, sports, goal, niveau, rythme, sportNames,
+    }));
+
+    // Airtable
+    if (user?.email) {
+      await fetch("/api/users", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email: user.email, ...payload }),
+      });
+      await refreshProfile();
+    }
+
+    setSaving(false);
+    router.push("/?profil=configured");
   }
 
   function skip() {
@@ -604,87 +291,146 @@ export default function OnboardingPage() {
   }
 
   const slideClass = animating
-    ? slideDir === "forward" ? "opacity-0 translate-y-3" : "opacity-0 -translate-y-3"
+    ? slideDir === "fwd" ? "opacity-0 translate-y-3" : "opacity-0 -translate-y-3"
     : "opacity-100 translate-y-0";
 
-  // ── Écran de bienvenue (uniquement première fois) ─────────────────────────
-  if (welcome) {
+  const progress = isResults ? 100 : (step / STEPS.length) * 100;
+
+  // ── Écran résultats ─────────────────────────────────────────────────────────
+  if (isResults) {
+    const sportNames = sports.flatMap((k) => SPORT_TO_SORTIE[k] ?? []);
+
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col items-center justify-center px-4 py-10">
-        <div className="w-full max-w-md text-center flex flex-col items-center gap-6">
-          <span className="text-6xl">🏅</span>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 leading-snug mb-3">
-              On t&apos;aide à trouver<br />les bonnes sorties
+        <div className={`w-full max-w-lg transition-all duration-200 ease-out ${slideClass}`}>
+
+          {/* Header résultats */}
+          <div className="text-center mb-6">
+            <span className="text-5xl mb-3 block">🎯</span>
+            <h1 className="text-2xl font-extrabold text-slate-900 mb-1">
+              On a trouvé des sorties pour toi !
             </h1>
-            <p className="text-slate-500 text-base leading-relaxed max-w-sm mx-auto">
-              Réponds à quelques questions pour te proposer des partenaires adaptés à ton niveau et tes sports.
+            <p className="text-slate-500 text-sm">
+              Basé sur tes sports ({sportNames.join(", ")}) · {niveau}
             </p>
           </div>
-          <div className="flex flex-col gap-2 w-full">
-            <button
-              onClick={() => setWelcome(false)}
-              className="w-full py-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.98]"
-            >
-              Commencer →
-            </button>
-            <button
-              onClick={skip}
-              className="text-sm text-slate-400 hover:text-slate-600 transition-colors py-2"
-            >
-              Passer pour l&apos;instant
-            </button>
+
+          {/* Progress */}
+          <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden mb-6">
+            <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full w-full transition-all duration-500" />
           </div>
-          <div className="flex gap-6 text-center text-xs text-slate-400 mt-2">
-            <span>⏱️ 2 minutes</span>
-            <span>🎯 Résultats personnalisés</span>
-            <span>✏️ Modifiable</span>
+
+          {/* Sorties matchées */}
+          <div className="flex flex-col gap-2.5 mb-6">
+            {loadingMatch ? (
+              [1, 2, 3].map((i) => (
+                <div key={i} className="h-16 bg-white rounded-2xl border border-slate-100 shimmer" />
+              ))
+            ) : matches.length > 0 ? (
+              matches.map((s) => {
+                const c = SPORT_COLOR_MAP[s.sport] ?? "#64748b";
+                const e = SPORT_EMOJI_MAP[s.sport] ?? "🏅";
+                const pct = Math.min(100, ((s.nbParticipants ?? 0) / s.participantsMax) * 100);
+                return (
+                  <div key={s.id} className="flex items-center gap-3 bg-white rounded-2xl border border-slate-100 hover:border-blue-200 hover:shadow-sm p-3 transition-all">
+                    <span className="text-2xl flex-shrink-0">{e}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-900 text-sm truncate">{s.titre}</p>
+                      <p className="text-xs text-slate-400 truncate">
+                        {s.date ?? ""}{s.lieu ? ` · ${s.lieu}` : ""}
+                        {s.distanceKm ? ` · ${s.distanceKm.toFixed(1)} km` : ""}
+                      </p>
+                      {/* mini progress */}
+                      <div className="h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: c }} />
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ background: c + "18", color: c }}>
+                        {s.sport}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        👥 {s.nbParticipants}/{s.participantsMax}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-center py-8 bg-white rounded-2xl border border-dashed border-slate-200">
+                <p className="text-slate-500 text-sm">Aucune sortie trouvée pour l&apos;instant</p>
+                <p className="text-xs text-slate-400 mt-1">D&apos;autres seront proposées bientôt !</p>
+              </div>
+            )}
           </div>
+
+          {/* Score pills */}
+          <div className="flex flex-wrap gap-2 justify-center mb-5">
+            {sports.map((k) => {
+              const names = SPORT_TO_SORTIE[k];
+              return names.map((n) => (
+                <span key={n} className="text-xs font-semibold px-3 py-1 rounded-full"
+                  style={{ background: (SPORT_COLOR_MAP[n] ?? "#64748b") + "18", color: SPORT_COLOR_MAP[n] ?? "#64748b" }}>
+                  {SPORT_EMOJI_MAP[n] ?? "🏅"} {n}
+                </span>
+              ));
+            })}
+            <span className="text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-600">
+              📊 {niveau}
+            </span>
+          </div>
+
+          {/* CTA */}
+          <button
+            type="button"
+            onClick={finish}
+            disabled={saving}
+            className="w-full py-4 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-base shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.98]"
+          >
+            {saving ? "Enregistrement…" : "Voir toutes mes sorties →"}
+          </button>
+          <button type="button" onClick={() => setStep(STEPS.length - 1)}
+            className="w-full text-center text-sm text-slate-400 hover:text-slate-600 py-2 mt-1">
+            ← Modifier mes réponses
+          </button>
         </div>
       </main>
     );
   }
 
-  // ── Écran d'édition si déjà fait (welcome=false dès le départ) ────────────
-  // → on montre directement le questionnaire avec un header différent
-
+  // ── Questionnaire ──────────────────────────────────────────────────────────
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col items-center justify-center px-4 py-10">
       <div className={`w-full max-w-lg transition-all duration-200 ease-out ${slideClass}`}>
 
+        {/* Badge re-visite */}
+        {alreadyDone && step === 0 && (
+          <div className="flex justify-center mb-4">
+            <span className="inline-flex items-center gap-2 bg-blue-50 border border-blue-100 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+              ✏️ Modification de tes préférences sportives
+            </span>
+          </div>
+        )}
+
         {/* Header */}
         <div className="text-center mb-6">
-          {alreadyDone && stepIndex === 0 && (
-            <div className="mb-4 inline-flex items-center gap-2 bg-blue-50 border border-blue-100 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-full">
-              ✏️ Modification de tes préférences sportives
-            </div>
-          )}
           <span className="text-5xl mb-3 block">{currentStep.emoji}</span>
-          <div className="flex items-center justify-center gap-2 mb-3 flex-wrap">
+          <div className="flex items-center justify-center gap-2 mb-2">
             <span className="text-xs font-semibold text-slate-400 tracking-widest uppercase">
-              {stepIndex + 1} / {totalSteps}
+              {step + 1} / {STEPS.length}
             </span>
-            {currentStep.sport && (
-              <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${SPORT_COLOR[currentStep.sport]}`}>
-                {SPORT_LABEL[currentStep.sport]}
-              </span>
-            )}
-            {currentStep.optional && (
-              <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
-                Facultatif
-              </span>
-            )}
           </div>
           <h1 className="text-xl md:text-2xl font-extrabold text-slate-900 leading-snug">
             {currentStep.question}
           </h1>
           {currentStep.hint && (
-            <p className="text-slate-400 text-sm mt-1.5">{currentStep.hint}</p>
+            <p className="text-slate-400 text-sm mt-1">{currentStep.hint}</p>
           )}
         </div>
 
         {/* Progress bar */}
-        <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden mb-6">
+        <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden mb-4">
           <div
             className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500"
             style={{ width: `${progress}%` }}
@@ -693,60 +439,34 @@ export default function OnboardingPage() {
 
         {/* Step dots */}
         <div className="flex justify-center gap-1.5 mb-6">
-          {activeSteps.map((s, i) => (
+          {STEPS.map((s, i) => (
             <div key={s.id} className={`h-1.5 rounded-full transition-all duration-300 ${
-              i === stepIndex ? "w-6 bg-blue-600" : i < stepIndex ? "w-2 bg-blue-300" : "w-2 bg-slate-200"
+              i === step ? "w-6 bg-blue-600" : i < step ? "w-2 bg-blue-300" : "w-2 bg-slate-200"
             }`} />
+          ))}
+          <div className="w-2 h-1.5 rounded-full bg-slate-200" /> {/* results dot */}
+        </div>
+
+        {/* Options */}
+        <div className="flex flex-col gap-2.5">
+          {currentStep.options.map((opt) => (
+            <OptionBtn
+              key={opt.value}
+              opt={opt}
+              selected={isSelected(opt.value)}
+              onClick={() => handleSelect(opt.value)}
+            />
           ))}
         </div>
 
-        {/* Step content */}
-        {currentStep.type === "text" ? (
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Ex : je cours 3 fois par semaine, je cherche des partenaires de sortie longue le week-end…"
-            rows={4}
-            className="w-full px-4 py-3 rounded-2xl border-2 border-slate-200 focus:border-blue-500 outline-none resize-none text-sm text-slate-700 bg-white transition-colors duration-150"
-          />
-        ) : currentStep.type === "avatar" ? (
-          <AvatarStep
-            selectedAvatar={avatarKey} photoUrl={photoUrl}
-            onAvatar={setAvatarKey} onPhoto={setPhotoUrl}
-            onClear={() => { setAvatarKey(""); setPhotoUrl(""); }}
-          />
-        ) : (
-          <div className={`grid gap-2.5 ${currentStep.options.length >= 5 ? "grid-cols-2" : "grid-cols-1"}`}>
-            {currentStep.options.map((opt) => {
-              const selected = isSelected(opt.value);
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => handleSelect(opt.value)}
-                  className={`flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border-2 font-semibold text-left transition-all duration-150 active:scale-[0.98] ${
-                    selected
-                      ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-200"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm"
-                  }`}
-                >
-                  <span className="text-2xl flex-shrink-0 leading-none">{opt.emoji}</span>
-                  <span className="text-sm leading-snug">{opt.label}</span>
-                  {selected && <span className="ml-auto text-blue-500 font-bold flex-shrink-0 text-base">✓</span>}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* CTA buttons */}
+        {/* Navigation */}
         <div className="mt-6 flex flex-col gap-3">
           <div className="flex gap-3">
-            {stepIndex > 0 && (
+            {step > 0 && (
               <button
                 type="button"
                 onClick={goBack}
-                className="px-5 py-3.5 rounded-2xl border-2 border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 hover:border-slate-300 active:scale-[0.97] transition-all duration-200"
+                className="px-5 py-3.5 rounded-2xl border-2 border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 hover:border-slate-300 active:scale-[0.97] transition-all"
               >
                 ←
               </button>
@@ -754,31 +474,18 @@ export default function OnboardingPage() {
             <button
               type="button"
               onClick={goNext}
-              disabled={!canContinue() || saving}
-              className="flex-1 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-base transition-all duration-200 active:scale-[0.98] shadow-md hover:shadow-lg"
+              disabled={!canContinue()}
+              className="flex-1 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-base transition-all active:scale-[0.98] shadow-md"
             >
-              {saving ? "Enregistrement…" : isLast ? "Commencer 🚀" : "Continuer →"}
+              {step === STEPS.length - 1 ? "Voir mes sorties →" : "Continuer →"}
             </button>
           </div>
-          <button
-            type="button"
-            onClick={skip}
-            className="text-center text-sm text-slate-400 hover:text-slate-600 transition-colors py-1"
-          >
+          <button type="button" onClick={skip}
+            className="text-center text-sm text-slate-400 hover:text-slate-600 transition-colors py-1">
             Passer l&apos;onboarding
           </button>
         </div>
 
-        {/* Sports preview */}
-        {stepIndex > 2 && selectedSports.length > 0 && (
-          <div className="mt-5 flex flex-wrap gap-1.5 justify-center">
-            {selectedSports.map((s) => (
-              <span key={s} className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${SPORT_COLOR[s]}`}>
-                {SPORT_LABEL[s]}
-              </span>
-            ))}
-          </div>
-        )}
       </div>
     </main>
   );

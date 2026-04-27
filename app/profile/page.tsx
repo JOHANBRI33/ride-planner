@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
 import { useDropzone } from "react-dropzone";
-import { AVATARS } from "@/app/onboarding/page";
+import { AVATARS } from "@/lib/avatars";
 
 const ADMIN_EMAIL = "bridey.johan@neuf.fr";
 
