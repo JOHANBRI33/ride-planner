@@ -131,6 +131,18 @@
 
 ---
 
+## Suggestion intelligente de parcours
+
+- [x] `GET /api/routes/search` — scoring top 3, filtres distance/sport/niveau, exclut trafic élevé, cache 2 min
+- [x] `GET /api/routes/[id]` — détail + gpx_url
+- [x] `RoutesSuggestions.tsx` — widget avec sliders distance, selects sport/niveau, position GPS auto
+- [x] Cartes résultat : distance, durée, D+, safety dots (0-5), niveau trafic, distance utilisateur
+- [x] CTA "Créer cette sortie →" redirige vers `/create?routeId=X`
+- [x] Page `/create` : détecte `?routeId=`, pré-remplit titre/sport/niveau/lieu, charge GPX si dispo
+- [x] Section "Parcours suggérés" sur la home page
+
+---
+
 ## API Routes
 
 - [x] `GET/POST /api/sorties` — liste et création
@@ -142,3 +154,5 @@
 - [x] `GET /api/strava/auth` / `callback` / `status`
 - [x] `POST /api/strava/sync`
 - [x] Sanitisation du JSON route avant Airtable (suppression slopes, downsampling à 300 pts)
+- [x] `GET /api/routes/search` — filtres + scoring
+- [x] `GET /api/routes/[id]` — détail parcours
