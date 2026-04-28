@@ -396,18 +396,60 @@ function SortieRow({ s, mine }: { s: Sortie; mine: boolean }) {
 
 type SyncResult = { total: number; matched: number; validated: number };
 
-function StravaSection({ userId, userEmail }: { userId: string; userEmail: string }) {
-  const [connected,  setConnected]  = useState<boolean | null>(null);
-  const [syncing,    setSyncing]    = useState(false);
-  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
-  const [syncError,  setSyncError]  = useState("");
+type StravaActivity = {
+  id: number; name: string; sport: string; date: string;
+  distanceKm: number; durationMin: number; elevGain: number;
+};
+type StravaStats = {
+  totalActivities: number; totalKm: number; totalMin: number; mainSport: string | null;
+  monthKm: number; monthMin: number; monthActivities: number;
+};
 
+const SPORT_EMOJI_MAP: Record<string, string> = {
+  "Vélo": "🚴", "Course à pied": "🏃", "Trail": "🏔️",
+  "Randonnée": "🥾", "Natation": "🏊", "Triathlon": "🏅",
+};
+
+function fmtMin(min: number): string {
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)}h${min % 60 > 0 ? String(min % 60).padStart(2, "0") : ""}`;
+}
+
+function StravaSection({ userId, userEmail }: { userId: string; userEmail: string }) {
+  const [connected,   setConnected]   = useState<boolean | null>(null);
+  const [activities,  setActivities]  = useState<StravaActivity[] | null>(null);
+  const [stats,       setStats]       = useState<StravaStats | null>(null);
+  const [loadingData, setLoadingData] = useState(false);
+  const [syncing,     setSyncing]     = useState(false);
+  const [syncResult,  setSyncResult]  = useState<SyncResult | null>(null);
+  const [syncError,   setSyncError]   = useState("");
+
+  // Check connection status
   useEffect(() => {
     fetch(`/api/strava/status?userId=${userId}`)
       .then((r) => r.json())
-      .then((d) => setConnected(d.connected))
+      .then((d) => {
+        setConnected(d.connected);
+        if (d.connected) loadActivities();
+      })
       .catch(() => setConnected(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  async function loadActivities() {
+    setLoadingData(true);
+    try {
+      const res = await fetch(`/api/strava/activities?userId=${encodeURIComponent(userId)}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setActivities(data.activities ?? []);
+      setStats(data.stats ?? null);
+    } catch {
+      // Silent — activities just won't show
+    } finally {
+      setLoadingData(false);
+    }
+  }
 
   async function handleSync() {
     setSyncing(true);
@@ -422,6 +464,8 @@ function StravaSection({ userId, userEmail }: { userId: string; userEmail: strin
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const data: SyncResult = await res.json();
       setSyncResult(data);
+      // Reload activities after sync
+      await loadActivities();
     } catch (e) {
       setSyncError((e as Error).message ?? "Erreur sync");
     } finally {
@@ -429,7 +473,9 @@ function StravaSection({ userId, userEmail }: { userId: string; userEmail: strin
     }
   }
 
-  if (connected === null) return null; // loading
+  const monthLabel = new Date().toLocaleDateString("fr-FR", { month: "long" });
+
+  if (connected === null) return null;
 
   return (
     <section>
@@ -437,19 +483,20 @@ function StravaSection({ userId, userEmail }: { userId: string; userEmail: strin
         <h2 className="text-base font-semibold text-slate-700">🟠 Strava</h2>
         {connected && (
           <span className="text-[10px] font-bold bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">
-            Connecté
+            Connecté ✓
           </span>
         )}
       </div>
 
-      {!connected ? (
+      {/* ── Not connected ── */}
+      {!connected && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col gap-3">
           <div className="flex items-start gap-3">
             <span className="text-3xl">🟠</span>
             <div>
               <p className="text-sm font-semibold text-slate-800">Connecte ton compte Strava</p>
               <p className="text-xs text-slate-500 mt-1">
-                Tes activités Strava seront automatiquement associées à tes sorties RidePlanner et valideront tes participations.
+                Tes activités seront associées à tes sorties RidePlanner et valideront tes participations automatiquement.
               </p>
             </div>
           </div>
@@ -460,52 +507,125 @@ function StravaSection({ userId, userEmail }: { userId: string; userEmail: strin
             🔗 Connecter Strava
           </a>
         </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">✅</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-800">Compte Strava lié</p>
-              <p className="text-xs text-slate-500">Tes activités récentes seront associées à tes sorties.</p>
+      )}
+
+      {/* ── Connected ── */}
+      {connected && (
+        <div className="flex flex-col gap-4">
+
+          {/* Stats mensuelles */}
+          {stats && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <StatCard
+                icon={SPORT_EMOJI_MAP[stats.mainSport ?? ""] ?? "🏅"}
+                label="Sport principal"
+                value={stats.mainSport ?? "—"}
+              />
+              <StatCard
+                icon="📏"
+                label={`Km en ${monthLabel}`}
+                value={`${stats.monthKm} km`}
+                sub={`${stats.totalKm} km sur 90j`}
+              />
+              <StatCard
+                icon="⏱️"
+                label={`Temps en ${monthLabel}`}
+                value={fmtMin(stats.monthMin)}
+                sub={fmtMin(stats.totalMin) + " sur 90j"}
+              />
+              <StatCard
+                icon="🗓️"
+                label={`Sorties en ${monthLabel}`}
+                value={stats.monthActivities}
+                sub={`${stats.totalActivities} sur 90j`}
+              />
             </div>
-            <a
-              href={`/api/strava/auth?userId=${encodeURIComponent(userId)}&userEmail=${encodeURIComponent(userEmail)}`}
-              className="text-xs text-slate-400 hover:text-slate-600 underline flex-shrink-0"
+          )}
+
+          {/* Actions */}
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-800">Compte Strava lié</p>
+                <p className="text-xs text-slate-500">Synchronise pour valider tes sorties automatiquement.</p>
+              </div>
+              <a
+                href={`/api/strava/auth?userId=${encodeURIComponent(userId)}&userEmail=${encodeURIComponent(userEmail)}`}
+                className="text-xs text-slate-400 hover:text-slate-600 underline flex-shrink-0"
+              >
+                Reconnecter
+              </a>
+            </div>
+
+            <button
+              onClick={handleSync}
+              disabled={syncing || loadingData}
+              className="flex items-center justify-center gap-2 w-full bg-[#FC4C02] hover:bg-[#e04400] disabled:opacity-50 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-all active:scale-95"
             >
-              Reconnecter
-            </a>
+              {syncing ? (
+                <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Synchronisation…</>
+              ) : "🔄 Synchroniser mes activités"}
+            </button>
+
+            {syncResult && (
+              <div className="bg-orange-50 border border-orange-100 rounded-xl px-4 py-3 text-sm">
+                <p className="font-semibold text-orange-800">Sync terminée ✅</p>
+                <ul className="mt-1 text-xs text-orange-700 space-y-0.5">
+                  <li>• {syncResult.total} activité{syncResult.total !== 1 ? "s" : ""} importée{syncResult.total !== 1 ? "s" : ""}</li>
+                  <li>• {syncResult.matched} associée{syncResult.matched !== 1 ? "s" : ""} à une sortie</li>
+                  {syncResult.validated > 0 && (
+                    <li className="font-semibold">• {syncResult.validated} sortie{syncResult.validated !== 1 ? "s" : ""} auto-validée{syncResult.validated !== 1 ? "s" : ""} 🎉</li>
+                  )}
+                </ul>
+              </div>
+            )}
+            {syncError && (
+              <p className="text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">{syncError}</p>
+            )}
           </div>
 
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="flex items-center justify-center gap-2 w-full bg-[#FC4C02] hover:bg-[#e04400] disabled:opacity-50 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-all active:scale-95"
-          >
-            {syncing ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Synchronisation…
-              </>
-            ) : (
-              "🔄 Synchroniser mes activités"
-            )}
-          </button>
+          {/* Liste des dernières activités */}
+          {loadingData && (
+            <div className="flex justify-center py-6">
+              <span className="w-5 h-5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
 
-          {syncResult && (
-            <div className="bg-orange-50 border border-orange-100 rounded-xl px-4 py-3 text-sm">
-              <p className="font-semibold text-orange-800">Sync terminée ✅</p>
-              <ul className="mt-1 text-xs text-orange-700 space-y-0.5">
-                <li>• {syncResult.total} activité{syncResult.total > 1 ? "s" : ""} importée{syncResult.total > 1 ? "s" : ""}</li>
-                <li>• {syncResult.matched} associée{syncResult.matched > 1 ? "s" : ""} à une sortie</li>
-                {syncResult.validated > 0 && (
-                  <li className="font-semibold">• {syncResult.validated} sortie{syncResult.validated > 1 ? "s" : ""} auto-validée{syncResult.validated > 1 ? "s" : ""} 🎉</li>
-                )}
+          {!loadingData && activities && activities.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-50">
+                <p className="text-sm font-semibold text-slate-700">Dernières activités</p>
+              </div>
+              <ul className="divide-y divide-slate-50">
+                {activities.slice(0, 5).map((a) => (
+                  <li key={a.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className="text-xl flex-shrink-0">{SPORT_EMOJI_MAP[a.sport] ?? "🏅"}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{a.name}</p>
+                      <p className="text-xs text-slate-400">
+                        {new Date(a.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                        {" · "}{a.sport}
+                      </p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-semibold text-slate-800">{a.distanceKm} km</p>
+                      <p className="text-xs text-slate-400">{fmtMin(a.durationMin)}</p>
+                    </div>
+                    {a.elevGain > 0 && (
+                      <div className="text-right flex-shrink-0 hidden sm:block">
+                        <p className="text-xs text-slate-400">D+ {a.elevGain} m</p>
+                      </div>
+                    )}
+                  </li>
+                ))}
               </ul>
             </div>
           )}
 
-          {syncError && (
-            <p className="text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">{syncError}</p>
+          {!loadingData && activities && activities.length === 0 && (
+            <p className="text-xs text-slate-400 text-center py-4">
+              Aucune activité récente — clique sur Synchroniser
+            </p>
           )}
         </div>
       )}
