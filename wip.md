@@ -18,10 +18,10 @@
 
 ---
 
-## Airtable — Table `routes` à créer
+## Airtable — Table `routes`
 
-- [ ] Créer table `routes` avec les champs : `name` (text), `sport` (text), `distance_km` (number), `duration_min` (number), `elevation` (number), `difficulty` (text), `safety_score` (number 0-5), `traffic_level` (text: low/medium/high), `start_lat` (number), `start_lng` (number), `city` (text), `gpx_url` (text/url)
-- [ ] Alimenter la table avec des parcours réels (au moins 5-10 pour tester les suggestions)
+- [x] Table `routes` créée avec tous les champs
+- [ ] Alimenter la table avec des parcours réels (minimum 5-10 pour tester les suggestions)
 
 ---
 
