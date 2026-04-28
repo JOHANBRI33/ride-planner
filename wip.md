@@ -8,9 +8,10 @@
 ## En cours / commencé mais pas fini
 
 ### Strava — Activités stockées
-- [ ] La table Airtable `strava_activities` n'est pas encore créée
-- [ ] Le sync crée des validations mais ne stocke pas les détails des activités Strava importées
-- [ ] Pas d'interface pour voir les activités importées dans le dashboard
+- [x] Table `strava_activities` créée dans Airtable
+- [x] Le sync stocke les détails des activités Strava dans `strava_activities`
+- [x] Dashboard affiche les dernières activités + stats mensuelles
+- [ ] Pas de pagination dans la liste des activités (limité à 20)
 
 ### Onboarding — Scoring résultats
 - [ ] Les sorties affichées à l'étape 5 (résultats) sont mockées / limitées — pas de vraie requête filtrée par géolocalisation

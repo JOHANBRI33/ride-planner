@@ -111,10 +111,14 @@
 - [x] OAuth 2.0 complet (auth → callback → sauvegarde token)
 - [x] Token refresh automatique (si expiré sous 5 min)
 - [x] `GET /api/strava/status` → vérifie si connecté
-- [x] `POST /api/strava/sync` → fetch 50 dernières activités
+- [x] `GET /api/strava/activities?userId=X` → retourne 20 activités + stats (cache 5 min)
+- [x] `POST /api/strava/sync` → fetch 50 dernières activités, match sorties, auto-valide
 - [x] Matching automatique activité ↔ sortie (date ±1j, sport, distance ±30%)
 - [x] Création automatique de validations pour les sorties matchées
 - [x] Mapping sport Strava → RidePlanner (`STRAVA_SPORT_MAP`)
+- [x] Dashboard Strava : 4 stat cards (sport principal, km mois, temps mois, nb sorties)
+- [x] Liste des 5 dernières activités (nom, sport, km, durée, D+)
+- [x] Rechargement automatique des activités après sync
 
 ---
 
