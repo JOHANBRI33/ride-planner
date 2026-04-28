@@ -1,7 +1,7 @@
 # RidePlanner — Work In Progress & Idées
 
 > Fonctionnalités commencées, incomplètes ou à implémenter.
-> Dernière mise à jour : 2026-04-28 (session 3)
+> Dernière mise à jour : 2026-04-28 (session 4)
 
 ---
 
@@ -17,11 +17,13 @@
 
 ---
 
-## Airtable — Tables à créer en production
+## Airtable — Actions restantes
 
-- [ ] `strava_activities` : `userId`, `stravaId`, `sortieId`, `sport`, `distanceKm`, `durationMin`, `date`, `name`
-- [ ] Vérifier que les champs `niveau` et `rythme` existent dans la table `utilisateurs`
-- [ ] Vérifier que `strava_tokens` existe avec les champs : `userId`, `userEmail`, `athleteId`, `accessToken`, `refreshToken`, `expiresAt`
+- [x] Table `strava_tokens` créée (`userId`, `userEmail`, `athleteId`, `accessToken`, `refreshToken`, `expiresAt`)
+- [x] Champ `rythme` ajouté dans `utilisateurs`
+- [x] Champ `Niveau` (majuscule) existe dans `utilisateurs`
+- [ ] **URGENT** : renommer le champ `Niveau` → `niveau` (minuscule) dans Airtable `utilisateurs` — le code utilise `get("niveau")` (case-sensitive)
+- [ ] Table `strava_activities` : ajouter les champs manquants : `activityId` (text), `sport_type` (text), `startDate` (text), `movingTimeMin` (number), `sortieId` (text), `matched` (text)
 
 ---
 
