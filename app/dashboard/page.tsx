@@ -121,12 +121,17 @@ function ValidationCard({
   onValidated: (sortieId: string, v: Validation) => void;
 }) {
   const { user } = useUser();
+  const routeStats  = parseRouteStats(s.route);
+  const sortieDistKm  = s.distanceKm ?? routeStats?.distanceKm ?? null;
+  const sortieDurMin  = routeStats?.durationMin ?? null;
+
   const [step, setStep]         = useState<"ask" | "form" | "rating" | "done">("ask");
   const [status, setStatus]     = useState<"oui" | "partiel" | "non" | null>(null);
-  const [distance, setDistance] = useState(String(s.distanceKm ?? parseRouteStats(s.route)?.distanceKm ?? ""));
-  const [duration, setDuration] = useState(String(parseRouteStats(s.route)?.durationMin ?? ""));
+  const [distance, setDistance] = useState(sortieDistKm != null ? String(sortieDistKm) : "");
+  const [duration, setDuration] = useState(sortieDurMin != null ? String(sortieDurMin) : "");
   const [ressenti, setRessenti] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [validationId, setValidationId] = useState("");
 
   // Rating state
@@ -137,9 +142,14 @@ function ValidationCard({
 
   async function handleStatus(st: "oui" | "partiel" | "non") {
     setStatus(st);
-    if (st === "non") {
+    setSubmitError("");
+    if (st === "oui") {
+      // Soumettre directement avec les km de la sortie — pas de formulaire
+      await submitValidation(st, sortieDistKm, sortieDurMin, null);
+    } else if (st === "non") {
       await submitValidation(st, null, null, null);
     } else {
+      // Partiel → formulaire de saisie
       setStep("form");
     }
   }
@@ -171,6 +181,8 @@ function ValidationCard({
       onValidated(s.id, validation);
       if (st === "non") { setStep("done"); }
       else { setStep("rating"); }
+    } else {
+      setSubmitError("Erreur lors de l'enregistrement, réessaie.");
     }
   }
 
@@ -225,18 +237,25 @@ function ValidationCard({
             <p className="text-sm font-medium text-slate-700">As-tu effectué cette sortie ?</p>
             <div className="flex gap-2">
               <button onClick={() => handleStatus("oui")} disabled={submitting}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold transition-all active:scale-95 disabled:opacity-50">
-                ✅ Oui
+                className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5">
+                {submitting && status === "oui"
+                  ? <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  : "✅"} Oui
               </button>
               <button onClick={() => handleStatus("partiel")} disabled={submitting}
                 className="flex-1 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-500 text-white text-sm font-bold transition-all active:scale-95 disabled:opacity-50">
                 ⚡ Partiellement
               </button>
               <button onClick={() => handleStatus("non")} disabled={submitting}
-                className="flex-1 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-bold transition-all active:scale-95 disabled:opacity-50">
-                ❌ Non
+                className="flex-1 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-bold transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5">
+                {submitting && status === "non"
+                  ? <span className="w-3.5 h-3.5 border-2 border-slate-500 border-t-transparent rounded-full animate-spin" />
+                  : "❌"} Non
               </button>
             </div>
+            {submitError && (
+              <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{submitError}</p>
+            )}
           </div>
         )}
 
