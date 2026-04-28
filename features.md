@@ -1,7 +1,7 @@
 # RidePlanner — Fonctionnalités livrées
 
 > Liste des fonctionnalités terminées et fonctionnelles en production.
-> Dernière mise à jour : 2026-04-28
+> Dernière mise à jour : 2026-04-28 (session 3)
 
 ---
 
@@ -68,8 +68,9 @@
 - [x] Reverse geocoding automatique du point RDV → rempli le champ lieu
 - [x] Import de fichier GPX (parsing client-side via `lib/gpx/parseGPX.ts`)
 - [x] Champ Sport auto-rempli selon le mode de transport choisi sur la carte
-- [x] Après validation : formulaire reste affiché, redirection `/dashboard` après 2s
+- [x] Après validation : formulaire reste affiché, redirection `/dashboard` après 2s (plus de `form.reset()`)
 - [x] Erreur de routage : warning ambre si Directions API échoue
+- [x] Badge de difficulté auto supprimé — le niveau est choisi par l'utilisateur uniquement
 
 ---
 
@@ -98,6 +99,10 @@
 - [x] Section Strava : bouton de connexion, bouton de synchronisation
 - [x] Toast "Strava connecté ✓" / "Refus" / "Erreur" après OAuth
 - [x] `useSearchParams()` wrappé dans `<Suspense>` (fix build Next.js 16)
+- [x] **Validation "Oui"** : soumet directement avec les km de la sortie (plus de formulaire vide)
+- [x] **Validation "Non"** : spinner visible + message d'erreur si API échoue + transition vers "done"
+- [x] **Validation "Partiellement"** : formulaire de saisie avec distance/durée pré-remplis
+- [x] Distance et durée initialisées depuis `distanceKm` ou `parseRouteStats(route)`
 
 ---
 

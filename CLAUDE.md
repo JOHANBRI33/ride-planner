@@ -2,15 +2,15 @@
 
 # RidePlanner — Instructions Claude
 
-## Documentation du projet (lire avant de coder)
+## Avant de coder : lire la doc
 
-- **`documentation.md`** — architecture technique, stack, API, conventions de code
-- **`features.md`** — liste de toutes les fonctionnalités livrées
-- **`wip.md`** — fonctionnalités en cours, idées, bugs connus
+- **`documentation.md`** — stack, architecture, API, conventions (bible technique)
+- **`features.md`** — fonctionnalités livrées et fonctionnelles
+- **`wip.md`** — en cours, idées, bugs connus
 
-## Règle obligatoire
+## Règle obligatoire après chaque livraison
 
-**Mettre à jour `features.md` et/ou `wip.md` après chaque livraison ou modification significative.**
 - Fonctionnalité livrée → ajouter dans `features.md`, retirer de `wip.md`
 - Nouvelle idée ou bug découvert → ajouter dans `wip.md`
-- Changement d'architecture → mettre à jour `documentation.md`
+- Changement d'architecture ou de contrat API → mettre à jour `documentation.md`
+- Toujours mettre à jour la date "Dernière mise à jour" du fichier modifié

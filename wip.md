@@ -1,7 +1,7 @@
 # RidePlanner — Work In Progress & Idées
 
 > Fonctionnalités commencées, incomplètes ou à implémenter.
-> Dernière mise à jour : 2026-04-28
+> Dernière mise à jour : 2026-04-28 (session 3)
 
 ---
 
@@ -70,3 +70,4 @@
 - [ ] Le mode "Marche ou Run" dans la carte couvre walking + running + hiking sans distinction — le champ Sport se règle sur "Course à pied" par défaut, l'utilisateur doit changer si c'est de la randonnée
 - [ ] Les sorties sans `latitude/longitude` n'apparaissent pas sur la carte d'exploration
 - [ ] Le CI vérifie le build mais pas les tests (pas de tests unitaires en place)
+- [ ] Sur la validation dashboard, si `s.distanceKm` et `route` JSON sont tous les deux null, la distance reste vide même pour "Oui" — peu fréquent mais possible pour de vieilles sorties sans parcours tracé
