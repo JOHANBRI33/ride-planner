@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, Suspense } from "react";
 import _dynamic from "next/dynamic";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/context/UserContext";
 import type { StoredRoute } from "@/lib/elevation/elevationService";
 import { parseGPX, type GPXData } from "@/lib/gpx/parseGPX";
@@ -20,11 +20,23 @@ const MODE_TO_SPORT: Record<ExtendedMode, string> = {
   swimming: "Natation",
 };
 
+// ─── Wrapper for Suspense (useSearchParams) ───────────────────────────────────
+
 export default function CreatePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50" />}>
+      <CreateContent />
+    </Suspense>
+  );
+}
+
+function CreateContent() {
   const { user } = useUser();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const formRef = useRef<HTMLFormElement>(null);
   const lieuRef = useRef<HTMLInputElement>(null);
+  const titreRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -35,7 +47,48 @@ export default function CreatePage() {
   const [gpxStatus, setGpxStatus] = useState<"idle" | "success" | "error">("idle");
   const [gpxName, setGpxName] = useState("");
   const [sport, setSport] = useState("Vélo");
+  const [prefilledNiveau, setPrefilledNiveau] = useState("");
+  const [loadingRoute, setLoadingRoute] = useState(false);
   const gpxInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Pré-remplissage depuis ?routeId= (venant de RoutesSuggestions) ───────────
+  useEffect(() => {
+    const routeId = searchParams.get("routeId");
+    if (!routeId) return;
+
+    setLoadingRoute(true);
+    fetch(`/api/routes/${encodeURIComponent(routeId)}`)
+      .then((r) => r.json())
+      .then(async (route) => {
+        // Pré-remplir titre
+        if (titreRef.current && route.name) titreRef.current.value = route.name;
+        // Pré-remplir sport
+        if (route.sport) setSport(route.sport);
+        // Pré-remplir niveau
+        if (route.difficulty) setPrefilledNiveau(route.difficulty);
+        // Pré-remplir lieu
+        if (lieuRef.current && route.city) lieuRef.current.value = route.city;
+
+        // Charger GPX si disponible
+        if (route.gpx_url) {
+          try {
+            const gpxRes = await fetch(route.gpx_url);
+            const gpxText = await gpxRes.text();
+            const parsed = parseGPX(gpxText);
+            if (parsed) {
+              setGpxData(parsed);
+              setGpxName(route.name ?? "Parcours importé");
+              setGpxStatus("success");
+            }
+          } catch {
+            // GPX non disponible — pas bloquant
+          }
+        }
+      })
+      .catch(() => { /* silent */ })
+      .finally(() => setLoadingRoute(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleGpxFile(file: File) {
     setGpxStatus("idle");
@@ -134,6 +187,19 @@ export default function CreatePage() {
           <h1 className="text-2xl font-bold text-gray-900">Créer une sortie</h1>
         </div>
 
+        {/* Banner parcours pré-chargé */}
+        {loadingRoute && (
+          <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-sm text-emerald-700 font-medium mb-6">
+            <span className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            Chargement du parcours suggéré…
+          </div>
+        )}
+        {!loadingRoute && gpxStatus === "success" && searchParams.get("routeId") && (
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-sm text-emerald-700 font-medium mb-6">
+            <span>🗺️</span> Parcours pré-chargé depuis les suggestions — complète les infos ci-dessous
+          </div>
+        )}
+
         {!user && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-800 mb-6">
             Tu dois être{" "}
@@ -148,7 +214,7 @@ export default function CreatePage() {
           className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 flex flex-col gap-5"
         >
           <Field label="Titre *">
-            <input name="titre" required placeholder="Ex : Trail matinal au Massif de l'Étoile" className={inputCls} />
+            <input ref={titreRef} name="titre" required placeholder="Ex : Trail matinal au Massif de l'Étoile" className={inputCls} />
           </Field>
 
           <div className="grid grid-cols-2 gap-4">
@@ -225,7 +291,7 @@ export default function CreatePage() {
               </select>
             </Field>
             <Field label="Niveau *">
-              <select name="niveau" required className={inputCls}>
+              <select name="niveau" required defaultValue={prefilledNiveau} className={inputCls}>
                 <option value="">— Choisir —</option>
                 {NIVEAUX.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>

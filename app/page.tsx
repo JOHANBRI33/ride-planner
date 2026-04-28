@@ -13,6 +13,7 @@ import { parseRoute } from "@/lib/mapbox/parseRoute";
 const ExploreMap = _dynamic(() => import("@/components/ExploreMap"), { ssr: false });
 const WeatherWidget = _dynamic(() => import("@/components/WeatherWidget"), { ssr: false });
 const WeatherCompactDynamic = _dynamic(() => import("@/components/WeatherWidget").then(m => ({ default: m.WeatherCompact })), { ssr: false });
+const RoutesSuggestions = _dynamic(() => import("@/components/RoutesSuggestions"), { ssr: false });
 const CommunauteBoard = _dynamic(() => import("@/components/CommunauteBoard"), { ssr: false });
 
 type Sortie = {
@@ -879,6 +880,13 @@ export default function Home() {
             <span className="text-xs text-slate-300">OpenWeatherMap</span>
           </div>
           <WeatherWidget />
+        </div>
+      </section>
+
+      {/* ── Parcours suggérés ── */}
+      <section className="bg-white border-t border-slate-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          <RoutesSuggestions />
         </div>
       </section>
 
