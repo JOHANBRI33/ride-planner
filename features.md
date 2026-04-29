@@ -53,6 +53,25 @@
 
 ---
 
+## Carte d'exploration — RoutesMap (`/explore`)
+
+- [x] Affichage ligne GPX (couleur sport) quand une route est active (clic sur carte ou liste)
+- [x] Parser GPX client-side dans RoutesMap (DOMParser, downsample 500pts)
+- [x] fitBounds sur l'emprise GPX à l'activation
+- [x] Badge "Départ du circuit ↑" + "Tracé disponible 🗺️" dans le popup
+- [x] Suppression du `easeTo()` — le marker ne bouge plus à chaque clic
+- [x] Nettoyage de la couche GPX précédente lors du changement de route active
+
+## Création de sortie — circuit bibliothèque (`/create?routeId=`)
+
+- [x] Circuit chargé depuis `/api/routes/[id]` → affiché comme circuit **verrouillé** (orange 🔒)
+- [x] `fixedRoute` prop sur `RoutePickerMap` : couche `route-fixed` (glow + ligne orange)
+- [x] Marqueur 🚩 au point de départ du circuit figé
+- [x] Badge "Circuit importé — verrouillé" avec info
+- [x] L'utilisateur pose son **Point RDV** (marker bleu) séparément du circuit
+- [x] Mode "Trajet d'accès (optionnel)" pour tracer le chemin jusqu'au départ
+- [x] Le `storedRoute` soumis = circuit fixé (GPX), non écrasable par le tracé d'accès
+
 ## Carte d'exploration (`ExploreMap`)
 
 - [x] Dots colorés par sport (10px)

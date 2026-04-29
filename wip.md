@@ -26,7 +26,8 @@
 ## Airtable — Table `routes`
 
 - [x] Table `routes` créée avec tous les champs
-- [ ] Alimenter la table avec des parcours réels (minimum 5-10 pour tester les suggestions)
+- [x] 2 parcours créés avec GPX
+- [ ] Alimenter la table avec des parcours supplémentaires (objectif 5-10)
 
 ---
 
