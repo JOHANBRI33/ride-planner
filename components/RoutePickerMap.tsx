@@ -34,6 +34,8 @@ type Props = {
   onModeChange?:    (mode: ExtendedMode) => void;
   height?:          string;
   initialGpx?:      GPXData | null;
+  /** Circuit figé provenant de la bibliothèque de parcours — non modifiable */
+  fixedRoute?:      Point[] | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -132,6 +134,25 @@ function queryElevations(map: mapboxgl.Map, coords: Point[]): number[] {
 function initRouteSources(map: mapboxgl.Map) {
   const empty = buildPlainGeoJSON([]);
 
+  // ── Fixed/locked circuit layer (shown when fixedRoute is provided) ──
+  map.addSource("route-fixed", {
+    type: "geojson",
+    data: { type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} },
+  });
+  // Fixed glow
+  map.addLayer({
+    id: "route-fixed-glow", type: "line", source: "route-fixed",
+    paint: { "line-color": "#f97316", "line-width": 12, "line-opacity": 0.15, "line-blur": 6 },
+    layout: { "line-join": "round", "line-cap": "round" },
+  });
+  // Fixed main line (orange, solid)
+  map.addLayer({
+    id: "route-fixed-line", type: "line", source: "route-fixed",
+    paint: { "line-color": "#f97316", "line-width": 4.5, "line-opacity": 0.9 },
+    layout: { "line-join": "round", "line-cap": "round" },
+  });
+
+  // ── User-drawn route ──
   map.addSource("route", { type: "geojson", data: empty });
   // Glow
   map.addLayer({
@@ -158,6 +179,11 @@ function initRouteSources(map: mapboxgl.Map) {
   });
 }
 
+function setFixedRouteData(map: mapboxgl.Map, coords: Point[]) {
+  (map.getSource("route-fixed") as mapboxgl.GeoJSONSource | undefined)
+    ?.setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} });
+}
+
 function setRouteData(map: mapboxgl.Map, data: object) {
   (map.getSource("route") as mapboxgl.GeoJSONSource | undefined)
     ?.setData(data as Parameters<mapboxgl.GeoJSONSource["setData"]>[0]);
@@ -171,7 +197,7 @@ function setPreviewData(map: mapboxgl.Map, coords: Point[]) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function RoutePickerMap({
-  onLocationChange, onRouteChange, onModeChange, height = "320px", initialGpx,
+  onLocationChange, onRouteChange, onModeChange, height = "320px", initialGpx, fixedRoute,
 }: Props) {
   const containerRef        = useRef<HTMLDivElement>(null);
   const mapRef              = useRef<mapboxgl.Map | null>(null);
@@ -203,6 +229,53 @@ export default function RoutePickerMap({
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { travelModeRef.current = travelMode; }, [travelMode]);
+
+  // ── Fixed route (circuit verrouillé depuis la bibliothèque) ────────────────
+
+  useEffect(() => {
+    if (!fixedRoute || fixedRoute.length < 2) return;
+
+    function applyFixed() {
+      const map = mapRef.current;
+      if (!map || !fixedRoute) return;
+
+      setFixedRouteData(map, fixedRoute);
+
+      // Marqueur de départ (drapeau orange)
+      const startEl = document.createElement("div");
+      startEl.style.cssText = `
+        width: 32px; height: 32px; border-radius: 50%;
+        background: #f97316; border: 3px solid white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 14px; pointer-events: none;
+      `;
+      startEl.textContent = "🚩";
+      new mapboxgl.Marker({ element: startEl, anchor: "center" })
+        .setLngLat(fixedRoute[0])
+        .addTo(map);
+
+      // Fit to fixed route bounds
+      const lngs = fixedRoute.map((p) => p[0]);
+      const lats  = fixedRoute.map((p) => p[1]);
+      map.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 60, maxZoom: 15, duration: 800 },
+      );
+
+      // Notify parent with fixed route as the stored route
+      onRouteChange(fixedRoute, {
+        v: 2,
+        geometry:    fixedRoute,
+        distanceKm:  Math.round(straightLineKm(fixedRoute) * 100) / 100,
+        durationMin: 0,
+      });
+    }
+
+    if (mapLoadedRef.current) applyFixed();
+    else mapRef.current?.once("load", applyFixed);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixedRoute]);
 
   // ── GPX import ─────────────────────────────────────────────────────────────
 
@@ -580,6 +653,21 @@ export default function RoutePickerMap({
   return (
     <div className="flex flex-col gap-2">
 
+      {/* ── Badge circuit verrouillé ── */}
+      {fixedRoute && fixedRoute.length >= 2 && (
+        <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
+          <span className="text-sm">🔒</span>
+          <div className="flex-1 min-w-0">
+            <span className="text-xs font-bold text-orange-700">Circuit importé — verrouillé</span>
+            <p className="text-[11px] text-orange-500 mt-0.5">Tracé figé · Placez votre point de rendez-vous ci-dessous</p>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <div className="w-3 h-3 rounded-full bg-orange-400" />
+            <span className="text-[10px] text-orange-500 font-medium">{fixedRoute.length} pts</span>
+          </div>
+        </div>
+      )}
+
       {/* ── Mode tabs ── */}
       <div className="flex gap-2 flex-wrap">
         <button type="button" onClick={() => setMode("location")}
@@ -588,12 +676,24 @@ export default function RoutePickerMap({
           }`}>
           📍 Point RDV
         </button>
-        <button type="button" onClick={() => setMode("route")}
-          className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all ${
-            mode === "route" ? "bg-emerald-600 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-          }`}>
-          🗺️ Tracer le parcours
-        </button>
+        {/* Masquer "Tracer le parcours" si circuit fixé (mais garder pour trajet d'accès) */}
+        {!fixedRoute && (
+          <button type="button" onClick={() => setMode("route")}
+            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all ${
+              mode === "route" ? "bg-emerald-600 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}>
+            🗺️ Tracer le parcours
+          </button>
+        )}
+        {fixedRoute && (
+          <button type="button" onClick={() => setMode("route")}
+            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all ${
+              mode === "route" ? "bg-slate-600 text-white shadow-sm" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+            }`}
+            title="Tracer le chemin pour rejoindre le départ du circuit">
+            🚦 Trajet d&apos;accès (optionnel)
+          </button>
+        )}
         {mode === "location" && (
           <button type="button" onClick={geolocate} disabled={locating}
             className="ml-auto text-sm text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">

@@ -49,6 +49,8 @@ function CreateContent() {
   const [sport, setSport] = useState("Vélo");
   const [prefilledNiveau, setPrefilledNiveau] = useState("");
   const [loadingRoute, setLoadingRoute] = useState(false);
+  /** Circuit figé depuis la bibliothèque de parcours (?routeId=) — affiché mais non modifiable */
+  const [fixedRouteCoords, setFixedRouteCoords] = useState<[number, number][] | null>(null);
   const gpxInputRef = useRef<HTMLInputElement>(null);
 
   // ── Pré-remplissage depuis ?routeId= (venant de RoutesSuggestions) ───────────
@@ -69,16 +71,29 @@ function CreateContent() {
         // Pré-remplir lieu
         if (lieuRef.current && route.city) lieuRef.current.value = route.city;
 
-        // Charger GPX si disponible
+        // Charger GPX si disponible → mode circuit verrouillé
         if (route.gpx_url) {
           try {
             const gpxRes = await fetch(route.gpx_url);
             const gpxText = await gpxRes.text();
             const parsed = parseGPX(gpxText);
             if (parsed) {
+              // Stocker les coordonnées comme circuit fixé (non éditable sur la carte)
+              setFixedRouteCoords(parsed.coordinates as [number, number][]);
+              // Sauvegarder les stats GPX pour l'affichage et la soumission
               setGpxData(parsed);
               setGpxName(route.name ?? "Parcours importé");
               setGpxStatus("success");
+              // Pré-remplir le storedRoute directement (le circuit figé EST la route)
+              setStoredRoute({
+                v: 2,
+                geometry:    parsed.coordinates,
+                distanceKm:  parsed.distanceKm,
+                durationMin: 0,
+                gain:        parsed.elevationGain,
+                loss:        0,
+                slopes:      [],
+              });
             }
           } catch {
             // GPX non disponible — pas bloquant
@@ -269,10 +284,17 @@ function CreateContent() {
 
             <RoutePickerMap
               onLocationChange={handleLocationChange}
-              onRouteChange={(pts, sr) => { setRoutePoints(pts); setStoredRoute(sr ?? null); }}
+              onRouteChange={(pts, sr) => {
+                setRoutePoints(pts);
+                // Ne pas écraser storedRoute si circuit figé déjà défini
+                if (!fixedRouteCoords) setStoredRoute(sr ?? null);
+              }}
               onModeChange={(m) => setSport(MODE_TO_SPORT[m])}
               height="320px"
-              initialGpx={gpxData}
+              // Si circuit fixé (depuis bibliothèque) → afficher comme verrouillé
+              // Sinon → import GPX normal éditable
+              fixedRoute={fixedRouteCoords ?? undefined}
+              initialGpx={fixedRouteCoords ? null : gpxData}
             />
             {coords && (
               <p className="text-xs text-gray-400">RDV : {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</p>
