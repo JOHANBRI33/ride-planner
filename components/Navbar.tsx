@@ -28,6 +28,10 @@ export default function Navbar() {
             </button>
           </Link>
 
+          <Link href="/explore" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors hidden md:block">
+            🗺️ Parcours
+          </Link>
+
           {user ? (
             <>
               <Link href="/dashboard" className="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors hidden md:block">
