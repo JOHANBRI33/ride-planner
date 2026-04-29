@@ -1,7 +1,7 @@
 # RidePlanner — Fonctionnalités livrées
 
 > Liste des fonctionnalités terminées et fonctionnelles en production.
-> Dernière mise à jour : 2026-04-28 (session 3)
+> Dernière mise à jour : 2026-04-28 (session 5)
 
 ---
 
@@ -37,16 +37,19 @@
 
 ---
 
-## Page d'accueil (Explore)
+## Page d'accueil (refonte session 5 — focus vélo)
 
-- [x] Liste de toutes les sorties ouvertes
-- [x] Section "🎯 Recommandé pour toi" : sorties filtrées par scoring (score ≥ 3), max 4
-- [x] Scoring : sport (+3) / niveau (+2 ou +1) / proximité ≤20 km (+1) / dans 7 jours (+1)
-- [x] Barre de score 7 dots colorés par sortie recommandée
-- [x] Hover sur carte de sortie → popup sur la carte (sync bidirectionnelle)
-- [x] Toast "Profil configuré ✓" après retour de l'onboarding
-- [x] Widget météo (`WeatherWidget`) basé sur la géolocalisation
-- [x] Détection position utilisateur pour le scoring de proximité
+- [x] Hero compact : "🚴 Trouve ta prochaine sortie vélo" + météo inline + 2 CTAs
+- [x] Météo fetché depuis `/api/weather` via géolocalisation auto, badge inline
+- [x] Section "📅 Cette semaine" : scroll horizontal, sorties des 7 prochains jours (max 6)
+- [x] `formatDateShort()` : "Aujourd'hui" / "Demain" / weekday court
+- [x] Filtres sticky : niveau, date rapide (7j/30j), proximité (avec slider km), reset
+- [x] Split layout 58/42% : liste gauche + carte Mapbox droite sticky
+- [x] Cartes 🚴 hardcodé (focus vélo), CTA slate-900
+- [x] Carte : sync hover card ↔ popup, dots colorés, h-[calc(100vh-160px)]
+- [x] Mobile : tabs Liste/Carte dans la barre de filtres
+- [x] Toast succès inscription
+- [x] Supprimé : CommunauteBoard, "Recommandé pour toi", WeatherWidget full, RoutesSuggestions, slogans rotatifs, compteurs stats, profil prefs bloc, create modal
 
 ---
 

@@ -1,7 +1,7 @@
 # RidePlanner — Work In Progress & Idées
 
 > Fonctionnalités commencées, incomplètes ou à implémenter.
-> Dernière mise à jour : 2026-04-28 (session 4)
+> Dernière mise à jour : 2026-04-28 (session 5)
 
 ---
 
