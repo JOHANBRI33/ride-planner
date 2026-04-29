@@ -18,6 +18,11 @@
 
 ---
 
+## Airtable — Table `favorites` à créer
+
+- [ ] Créer table `favorites` avec : `userId` (Single line text), `routeId` (Single line text)
+- [ ] Sans cette table, les favoris ne se sauvegardent pas (l'API échoue silencieusement)
+
 ## Airtable — Table `routes`
 
 - [x] Table `routes` créée avec tous les champs

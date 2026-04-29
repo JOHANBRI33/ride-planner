@@ -131,6 +131,18 @@
 
 ---
 
+## Page Explorer (`/explore`)
+
+- [x] Layout split-screen : liste gauche (400px) / carte Mapbox droite (full-height)
+- [x] Filtres : sport, niveau, distance max (slider), tri (distance/proximité/D+)
+- [x] Cartes parcours : nom, ville, distance, durée, D+, difficulté, sécurité, badge sport
+- [x] CTA "Créer une sortie" + téléchargement GPX par carte
+- [x] Favoris ⭐ : toggle optimistic, persistance Airtable (`GET/POST/DELETE /api/favorites`)
+- [x] Sync bidirectionnelle liste ↔ carte : hover card → marker highlight, click marker → scroll card
+- [x] Mobile : tabs "Liste / Carte"
+- [x] Overlay CTA au clic d'un marker sur la carte
+- [x] Lien "🗺️ Parcours" dans la Navbar
+
 ## Suggestion intelligente de parcours
 
 - [x] `GET /api/routes/search` — scoring top 3, filtres distance/sport/niveau, exclut trafic élevé, cache 2 min
